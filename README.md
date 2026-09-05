@@ -40,7 +40,7 @@ Laravel ships them; `db:secret-check` fails if it finds decryption in there.
 ## Install
 
 ```bash
-composer require npav/laravel-envcrypt
+composer require tusharb/laravel-envcrypt
 php artisan envcrypt:install
 ```
 
@@ -55,7 +55,7 @@ so the moment Composer runs `package:discover`:
 ```
 
 `envcrypt:install` names this project's secret (`ENVCRYPT_KEY_VAR` in `.env`,
-e.g. `NPAV_BILLING_BUILD_TAG`), publishes `config/envcrypt.php` and
+e.g. `TUSHARB_BILLING_BUILD_TAG`), publishes `config/envcrypt.php` and
 `storage/tools/envcrypt.php`, verifies the wiring, then prints the steps it
 cannot do for you. It encrypts nothing, and re-running it reports `unchanged`
 — safe in a deploy script.
@@ -89,7 +89,7 @@ declares success. Variable *names* are all it ever prints.
 
 ```bash
 php artisan envcrypt:uninstall      # published files, and the stored secret
-composer remove npav/laravel-envcrypt
+composer remove tusharb/laravel-envcrypt
 ```
 
 It refuses to delete the secret while any managed `.env` value is still an
@@ -119,8 +119,8 @@ A wrong `DB_PASSWORD` is exactly the situation where `php artisan` is no help.
 The same migration runs with neither Laravel nor Composer bootstrapped:
 
 ```bash
-php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt-all
-php vendor/npav/laravel-envcrypt/bin/envcrypt decrypt --key=DB_PASSWORD
+php vendor/tusharb/laravel-envcrypt/bin/envcrypt encrypt-all
+php vendor/tusharb/laravel-envcrypt/bin/envcrypt decrypt --key=DB_PASSWORD
 ```
 
 It requires only this package's framework-free classes, and refuses to run

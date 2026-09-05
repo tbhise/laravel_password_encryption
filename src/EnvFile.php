@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 /**
  * Reading and writing .env values.

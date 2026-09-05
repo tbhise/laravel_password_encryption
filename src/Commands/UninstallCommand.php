@@ -1,11 +1,11 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Illuminate\Console\Command;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvCryptSecret;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptSecret;
 
 /**
  * Removes what envcrypt:install put in place, and the secret itself.
@@ -57,7 +57,7 @@ class UninstallCommand extends Command
         $this->line('');
         $this->line('If a managed value is still an "enc:" value, the application will not');
         $this->line('connect once the package is removed - put the plaintext password back');
-        $this->line('in .env first. Then: composer remove npav/laravel-envcrypt');
+        $this->line('in .env first. Then: composer remove tusharb/laravel-envcrypt');
 
         return 0;
     }

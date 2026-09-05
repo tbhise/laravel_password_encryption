@@ -4,7 +4,7 @@
          bootstrap="vendor/autoload.php"
          colors="true">
     <testsuites>
-        <testsuite name="Npav EnvCrypt Test Suite">
+        <testsuite name="Tusharb EnvCrypt Test Suite">
             <directory>tests</directory>
         </testsuite>
     </testsuites>

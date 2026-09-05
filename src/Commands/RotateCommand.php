@@ -1,13 +1,13 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Exception;
 use Illuminate\Console\Command;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvCryptSecret;
-use Npav\EnvCrypt\EnvFile;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptSecret;
+use Tusharb\EnvCrypt\EnvFile;
 
 /**
  * Replaces the secret and re-encrypts every managed password under the new

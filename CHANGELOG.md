@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to `npav/laravel-envcrypt` are documented here.
+All notable changes to `tusharb/laravel-envcrypt` are documented here.
 
 ## 1.0.0 - unreleased
 
@@ -41,7 +41,7 @@ First release, packaged from the single-file `envcrypt-kit.php` installer.
   writes it; the name, never the secret, lives in the project.
 - The project root is discovered by walking up for `artisan` + `composer.json`,
   because the code now lives at an unknown depth under `vendor/`.
-- Classes are namespaced under `Npav\EnvCrypt` and autoloaded. Nothing is
+- Classes are namespaced under `Tusharb\EnvCrypt` and autoloaded. Nothing is
   copied into `app/`, and no provider line is edited into your project —
   Laravel's package discovery registers the provider.
 - `db:secret-check` and `envcrypt:verify` skip the connector assertion for

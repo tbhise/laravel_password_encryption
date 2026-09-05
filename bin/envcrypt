@@ -4,9 +4,9 @@
 /**
  * Standalone .env password tool.
  *
- *   php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]
- *   php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]
- *   php vendor/npav/laravel-envcrypt/bin/envcrypt decrypt      ["enc:..."] [--key=NAME] [--pool=NAME]
+ *   php vendor/tusharb/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]
+ *   php vendor/tusharb/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]
+ *   php vendor/tusharb/laravel-envcrypt/bin/envcrypt decrypt      ["enc:..."] [--key=NAME] [--pool=NAME]
  *
  * Boots neither Laravel nor Composer - it requires only this package's own
  * framework-free classes. So it still works when a wrong DB_PASSWORD is the
@@ -26,9 +26,9 @@ if (PHP_SAPI !== 'cli') {
     exit;
 }
 
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\Io\PlainIo;
-use Npav\EnvCrypt\Migrator;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\Io\PlainIo;
+use Tusharb\EnvCrypt\Migrator;
 
 $src = dirname(__DIR__) . '/src';
 
@@ -107,9 +107,9 @@ switch ($command) {
 
     default:
         $io->write('Usage, from the project root:');
-        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]');
-        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]');
-        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt decrypt     ["enc:..."] [--key=NAME] [--pool=NAME]');
+        $io->write('  php vendor/tusharb/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]');
+        $io->write('  php vendor/tusharb/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]');
+        $io->write('  php vendor/tusharb/laravel-envcrypt/bin/envcrypt decrypt     ["enc:..."] [--key=NAME] [--pool=NAME]');
         $io->write('');
         $io->write('Add --root=/path/to/project when running from elsewhere.');
         exit(1);

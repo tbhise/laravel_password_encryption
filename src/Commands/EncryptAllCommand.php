@@ -1,11 +1,11 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Illuminate\Console\Command;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\Io\ConsoleIo;
-use Npav\EnvCrypt\Migrator;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\Io\ConsoleIo;
+use Tusharb\EnvCrypt\Migrator;
 
 /**
  * Migrates a project in one reviewed pass: finds the database passwords in

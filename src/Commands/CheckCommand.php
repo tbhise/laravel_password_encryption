@@ -1,13 +1,13 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvCryptConnector;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptConnector;
 
 /**
  * The check to run after every deploy.

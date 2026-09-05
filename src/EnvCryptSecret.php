@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 /**
  * Resolves the secret from the store that actually matters, rather than from

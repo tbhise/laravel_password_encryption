@@ -1,5 +1,5 @@
 {
-    "name": "npav/laravel-envcrypt",
+    "name": "tusharb/laravel-envcrypt",
     "description": "Encrypted database passwords in .env for Laravel 8-13, decrypted at connection time so no plaintext ever reaches the config cache.",
     "keywords": [
         "laravel",
@@ -15,8 +15,8 @@
     "license": "MIT",
     "authors": [
         {
-            "name": "NPAV",
-            "email": "tusharb@npav.net"
+            "name": "Tushar Bhise",
+            "email": "tusharbhise908@gmail.com"
         }
     ],
     "require": {
@@ -32,12 +32,12 @@
     },
     "autoload": {
         "psr-4": {
-            "Npav\\EnvCrypt\\": "src/"
+            "Tusharb\\EnvCrypt\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "Npav\\EnvCrypt\\Tests\\": "tests/"
+            "Tusharb\\EnvCrypt\\Tests\\": "tests/"
         }
     },
     "bin": [
@@ -46,7 +46,7 @@
     "extra": {
         "laravel": {
             "providers": [
-                "Npav\\EnvCrypt\\EnvCryptServiceProvider"
+                "Tusharb\\EnvCrypt\\EnvCryptServiceProvider"
             ]
         }
     },

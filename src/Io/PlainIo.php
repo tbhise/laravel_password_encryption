@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt\Io;
+namespace Tusharb\EnvCrypt\Io;
 
 /**
  * STDIN and STDOUT directly, for the standalone script.

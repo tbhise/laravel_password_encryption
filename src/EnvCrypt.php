@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 use RuntimeException;
 

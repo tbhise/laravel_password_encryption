@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt\Io;
+namespace Tusharb\EnvCrypt\Io;
 
 /**
  * The small slice of terminal interaction the migrator needs.

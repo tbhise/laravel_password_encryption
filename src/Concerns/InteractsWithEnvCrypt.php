@@ -1,10 +1,10 @@
 <?php
 
-namespace Npav\EnvCrypt\Concerns;
+namespace Tusharb\EnvCrypt\Concerns;
 
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvCryptSecret;
-use Npav\EnvCrypt\TargetKeys;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptSecret;
+use Tusharb\EnvCrypt\TargetKeys;
 
 /**
  * Shared plumbing for the commands: locating .env, reading its values, and
@@ -27,7 +27,7 @@ trait InteractsWithEnvCrypt
     /** One key's value, quote-correct. Null when absent. */
     protected function envValue($key)
     {
-        return \Npav\EnvCrypt\EnvFile::value($this->envContents(), $key);
+        return \Tusharb\EnvCrypt\EnvFile::value($this->envContents(), $key);
     }
 
     protected function isEncryptedValue($value)

@@ -1,9 +1,9 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 use Exception;
-use Npav\EnvCrypt\Io\Io;
+use Tusharb\EnvCrypt\Io\Io;
 
 /**
  * Finds the database passwords in .env, confirms the list with the operator,
@@ -20,7 +20,7 @@ use Npav\EnvCrypt\Io\Io;
  */
 final class Migrator
 {
-    /** @var \Npav\EnvCrypt\Io\Io */
+    /** @var \Tusharb\EnvCrypt\Io\Io */
     private $io;
 
     /** @var string */

@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 use Illuminate\Database\Connectors\ConnectorInterface;
 

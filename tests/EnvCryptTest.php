@@ -1,10 +1,10 @@
 <?php
 
-namespace Npav\EnvCrypt\Tests;
+namespace Tusharb\EnvCrypt\Tests;
 
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
-use Npav\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
 
 class EnvCryptTest extends TestCase
 {
@@ -21,7 +21,7 @@ class EnvCryptTest extends TestCase
             mkdir($this->root, 0777, true);
         }
 
-        $this->writeEnv("APP_ENV=local\nENVCRYPT_KEY_VAR=NPAV_TESTS_BUILD_TAG\n");
+        $this->writeEnv("APP_ENV=local\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\n");
     }
 
     protected function tearDown(): void
@@ -44,7 +44,7 @@ class EnvCryptTest extends TestCase
 
     public function test_it_reads_the_secret_name_from_the_env_file()
     {
-        $this->assertSame('NPAV_TESTS_BUILD_TAG', EnvCrypt::rootKeyVar());
+        $this->assertSame('TUSHARB_TESTS_BUILD_TAG', EnvCrypt::rootKeyVar());
     }
 
     public function test_it_round_trips_a_value()
@@ -105,7 +105,7 @@ class EnvCryptTest extends TestCase
         $payload = EnvCrypt::encrypt('secret-password', $key);
 
         $this->writeEnv(
-            "APP_ENV=local\nENVCRYPT_KEY_VAR=NPAV_TESTS_BUILD_TAG\nNPAV_TESTS_BUILD_TAG={$key}\n"
+            "APP_ENV=local\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\nTUSHARB_TESTS_BUILD_TAG={$key}\n"
         );
 
         $this->assertSame('secret-password', EnvCrypt::maybeDecrypt($payload));
@@ -118,7 +118,7 @@ class EnvCryptTest extends TestCase
         $payload = EnvCrypt::encrypt('secret-password', $key);
 
         $this->writeEnv(
-            "APP_ENV=production\nENVCRYPT_KEY_VAR=NPAV_TESTS_BUILD_TAG\nNPAV_TESTS_BUILD_TAG={$key}\n"
+            "APP_ENV=production\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\nTUSHARB_TESTS_BUILD_TAG={$key}\n"
         );
 
         $this->expectException(RuntimeException::class);

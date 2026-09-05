@@ -1,11 +1,11 @@
 <?php
 
-namespace Npav\EnvCrypt\Tests;
+namespace Tusharb\EnvCrypt\Tests;
 
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvCryptConnector;
-use Npav\EnvCrypt\EnvCryptServiceProvider;
-use Npav\EnvCrypt\EnvFile;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptConnector;
+use Tusharb\EnvCrypt\EnvCryptServiceProvider;
+use Tusharb\EnvCrypt\EnvFile;
 use Orchestra\Testbench\TestCase;
 
 /**
@@ -61,7 +61,7 @@ class InstallCommandTest extends TestCase
             ->assertSuccessful();
 
         $this->assertSame(
-            'NPAV_BILLING_BUILD_TAG',
+            'TUSHARB_BILLING_BUILD_TAG',
             EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
         );
     }
@@ -155,7 +155,7 @@ class InstallCommandTest extends TestCase
 
         file_put_contents(
             $this->envPath(),
-            "APP_ENV=local\nENVCRYPT_KEY_VAR=NPAV_TESTS_BUILD_TAG\nNPAV_TESTS_BUILD_TAG={$key}\n"
+            "APP_ENV=local\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\nTUSHARB_TESTS_BUILD_TAG={$key}\n"
         );
 
         EnvCrypt::reset();

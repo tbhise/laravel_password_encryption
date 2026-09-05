@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 /**
  * Which .env keys hold database passwords this project manages.

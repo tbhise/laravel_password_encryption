@@ -1,17 +1,17 @@
 <?php
 
-namespace Npav\EnvCrypt;
+namespace Tusharb\EnvCrypt;
 
 use Illuminate\Support\ServiceProvider;
-use Npav\EnvCrypt\Commands\CheckCommand;
-use Npav\EnvCrypt\Commands\DecryptCommand;
-use Npav\EnvCrypt\Commands\EncryptAllCommand;
-use Npav\EnvCrypt\Commands\EncryptCommand;
-use Npav\EnvCrypt\Commands\InstallCommand;
-use Npav\EnvCrypt\Commands\KeygenCommand;
-use Npav\EnvCrypt\Commands\RotateCommand;
-use Npav\EnvCrypt\Commands\UninstallCommand;
-use Npav\EnvCrypt\Commands\VerifyCommand;
+use Tusharb\EnvCrypt\Commands\CheckCommand;
+use Tusharb\EnvCrypt\Commands\DecryptCommand;
+use Tusharb\EnvCrypt\Commands\EncryptAllCommand;
+use Tusharb\EnvCrypt\Commands\EncryptCommand;
+use Tusharb\EnvCrypt\Commands\InstallCommand;
+use Tusharb\EnvCrypt\Commands\KeygenCommand;
+use Tusharb\EnvCrypt\Commands\RotateCommand;
+use Tusharb\EnvCrypt\Commands\UninstallCommand;
+use Tusharb\EnvCrypt\Commands\VerifyCommand;
 use Symfony\Component\Console\Output\ConsoleOutput;
 
 class EnvCryptServiceProvider extends ServiceProvider

@@ -1,11 +1,11 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Exception;
 use Illuminate\Console\Command;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
 
 /**
  * Prints a decrypted value.

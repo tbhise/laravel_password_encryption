@@ -1,10 +1,10 @@
 <?php
 
-namespace Npav\EnvCrypt\Tests;
+namespace Tusharb\EnvCrypt\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Npav\EnvCrypt\EnvFile;
-use Npav\EnvCrypt\TargetKeys;
+use Tusharb\EnvCrypt\EnvFile;
+use Tusharb\EnvCrypt\TargetKeys;
 
 class EnvFileTest extends TestCase
 {

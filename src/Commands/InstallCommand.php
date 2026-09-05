@@ -1,11 +1,11 @@
 <?php
 
-namespace Npav\EnvCrypt\Commands;
+namespace Tusharb\EnvCrypt\Commands;
 
 use Illuminate\Console\Command;
-use Npav\EnvCrypt\Concerns\InteractsWithEnvCrypt;
-use Npav\EnvCrypt\EnvCrypt;
-use Npav\EnvCrypt\EnvFile;
+use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvFile;
 
 /**
  * Sets the project up, and says what is left to do.
@@ -129,7 +129,7 @@ class InstallCommand extends Command
             return null;
         }
 
-        return 'NPAV_' . $project . '_BUILD_TAG';
+        return 'TUSHARB_' . $project . '_BUILD_TAG';
     }
 
     /**

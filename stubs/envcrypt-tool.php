@@ -23,11 +23,11 @@ if (PHP_SAPI !== 'cli') {
 }
 
 // storage/tools/envcrypt.php -> two levels up is the project root.
-$tool = dirname(__DIR__, 2) . '/vendor/npav/laravel-envcrypt/bin/envcrypt';
+$tool = dirname(__DIR__, 2) . '/vendor/tusharb/laravel-envcrypt/bin/envcrypt';
 
 if (! is_file($tool)) {
     fwrite(STDERR, 'ERROR: cannot find ' . $tool . PHP_EOL
-        . 'Is npav/laravel-envcrypt still installed? Try "composer install".' . PHP_EOL);
+        . 'Is tusharb/laravel-envcrypt still installed? Try "composer install".' . PHP_EOL);
     exit(1);
 }
 

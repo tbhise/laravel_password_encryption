@@ -1,6 +1,6 @@
 <?php
 
-namespace Npav\EnvCrypt\Io;
+namespace Tusharb\EnvCrypt\Io;
 
 use Illuminate\Console\Command;
 
