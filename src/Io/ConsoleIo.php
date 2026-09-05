@@ -3,6 +3,7 @@
 namespace Tusharb\EnvCrypt\Io;
 
 use Illuminate\Console\Command;
+use Symfony\Component\Console\Exception\MissingInputException;
 
 /**
  * The same interaction through an artisan command, so the migration reads and
@@ -35,12 +36,32 @@ final class ConsoleIo implements Io
         // nothing but punctuation still needs a word, or the question renders
         // blank.
         $question = rtrim($label, ' :>');
+        $question = $question === '' ? 'Choice' : $question;
 
-        // Symfony returns null at end of input when the question is not
-        // required, which is exactly the distinction this interface keeps.
-        $answer = $this->command->ask($question === '' ? 'Choice' : $question, null);
+        // Checked explicitly, rather than asking Symfony with a null default:
+        // with a null default, Symfony returns null BOTH when a real person
+        // presses Enter on a genuine question (a legitimate "confirm as-is")
+        // AND when there is nobody to ask at all - the two are indistinguishable
+        // once collapsed onto the same null. That collapse was the bug: it
+        // read a plain Enter as "no answer, abort" instead of "accept the
+        // list", exactly backwards from what the printed menu promises.
+        if ($this->command->hasOption('no-interaction') && $this->command->option('no-interaction')) {
+            return null;
+        }
 
-        return $answer === null ? null : (string) $answer;
+        try {
+            // '' rather than null: a blank Enter then reads as a genuine,
+            // distinct answer - "confirm as-is" - rather than as the sentinel
+            // this interface uses for "there is nothing to answer with".
+            $answer = $this->command->ask($question, '');
+        } catch (MissingInputException $e) {
+            // The stream ran out before an answer arrived - a piped script
+            // shorter than expected, say. The same "no answer" sentinel
+            // applies: this must not be read as consent either.
+            return null;
+        }
+
+        return (string) $answer;
     }
 
     public function confirm($question, $default = false)
