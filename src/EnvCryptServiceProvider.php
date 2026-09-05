@@ -4,10 +4,7 @@ namespace Tusharb\EnvCrypt;
 
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\ServiceProvider;
-use Symfony\Component\Console\Helper\QuestionHelper;
-use Symfony\Component\Console\Input\ArgvInput;
 use Symfony\Component\Console\Output\ConsoleOutput;
-use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Throwable;
 use Tusharb\EnvCrypt\Commands\CheckCommand;
 use Tusharb\EnvCrypt\Commands\DecryptCommand;
@@ -23,13 +20,14 @@ use Tusharb\EnvCrypt\Commands\VerifyCommand;
 class EnvCryptServiceProvider extends ServiceProvider
 {
     /**
-     * Commands during which an unconfigured install should announce itself.
-     *
-     * "package:discover" is the important one: Composer runs it through
-     * post-autoload-dump, so it is the first thing to execute after
-     * "composer require" and the only moment the package can speak for itself.
+     * Composer runs package:discover through post-autoload-dump, so it is the
+     * first thing to execute after "composer require" and the only moment a
+     * library gets to act on its own installation.
      */
-    private $announceDuring = ['package:discover', 'list', 'about'];
+    const SETUP_TRIGGER = 'package:discover';
+
+    /** Commands where an unconfigured project is worth a one-line mention. */
+    private $mentionDuring = ['list', 'about'];
 
     public function register()
     {
@@ -101,118 +99,57 @@ class EnvCryptServiceProvider extends ServiceProvider
             CheckCommand::class,
         ]);
 
-        $this->announceIfNotInstalled();
+        $this->setUpIfNotInstalled();
     }
 
     /**
-     * Composer drops the files into vendor/ and says nothing, which leaves an
-     * operator with an installed package and no idea that any further step
-     * exists.
+     * Set the project up as part of "composer require", rather than telling
+     * somebody to do it afterwards.
      *
      * A library cannot register a Composer script - only the root project can -
-     * so the closest available hook is package:discover, which Composer runs
-     * through post-autoload-dump immediately after the install. When a person
-     * is watching, the installer is offered there and then; otherwise the
-     * package prints what to run and stops.
+     * so package:discover is the hook available, and it is enough: the whole
+     * setup runs from here, and the installer reaches the operator's terminal
+     * directly for the questions Composer's pipes would otherwise swallow.
+     *
+     * It runs once. The moment the project has named its own secret this is a
+     * no-op, so "composer update" never re-enters it.
      */
-    private function announceIfNotInstalled()
+    private function setUpIfNotInstalled()
     {
-        if ($this->isInstalled() || ! $this->runningOneOf($this->announceDuring)) {
+        if ($this->isInstalled()) {
+            return;
+        }
+
+        if ($this->runningOneOf($this->mentionDuring)) {
+            (new ConsoleOutput())->writeln(
+                '<comment>' . PHP_EOL . '  EnvCrypt is not set up for this project yet.'
+                . PHP_EOL . '  Run:  php artisan envcrypt:install' . PHP_EOL . '</comment>'
+            );
+
+            return;
+        }
+
+        if (! $this->runningOneOf([self::SETUP_TRIGGER])) {
             return;
         }
 
         $output = new ConsoleOutput();
-
-        foreach ([
-            '',
-            '  EnvCrypt is in vendor/, but this project is not set up yet.',
-            '',
-        ] as $line) {
-            $output->writeln('<comment>' . $line . '</comment>');
-        }
-
-        if ($this->offerInstall($output)) {
-            return;
-        }
-
-        foreach ([
-            '  Run:  php artisan envcrypt:install',
-            '',
-            '  It names this project\'s secret, publishes the config and prints',
-            '  the remaining steps. Nothing is encrypted until you confirm it.',
-            '',
-        ] as $line) {
-            $output->writeln('<comment>' . $line . '</comment>');
-        }
-    }
-
-    /**
-     * Run the installer straight away, but only when a person is actually
-     * there to answer it.
-     *
-     * The guard is the point. An unattended Composer run - CI, a deploy
-     * script, "composer install --no-interaction" - must never be able to
-     * modify a project's credentials, so anything without a real terminal
-     * attached gets the printed instruction instead. Even when it does run,
-     * the installer encrypts nothing without a separate confirmation.
-     */
-    private function offerInstall(ConsoleOutput $output)
-    {
-        if (! $this->canPrompt()) {
-            return false;
-        }
-
-        $question = new QuestionHelper();
-        $input = new ArgvInput();
-        $input->setInteractive(true);
-
-        $answer = $question->ask(
-            $input,
-            $output,
-            new ConfirmationQuestion('  Set it up now? [Y/n] ', true)
-        );
-
-        if (! $answer) {
-            return false;
-        }
+        $output->writeln('<comment>' . PHP_EOL . '  Setting up EnvCrypt for this project...' . PHP_EOL . '</comment>');
 
         try {
-            $this->app->make(Kernel::class)->call('envcrypt:install');
+            // The installer works out for itself how to ask: this process's
+            // STDIN is a pipe when Composer started it, so it opens the
+            // console directly. Where there is no console at all - CI, a
+            // scripted deploy - it sets the project up and encrypts nothing.
+            $this->app->make(Kernel::class)->call('envcrypt:install', ['--from-composer' => true]);
+
             $output->write($this->app->make(Kernel::class)->output());
         } catch (Throwable $e) {
-            // package:discover must not fail because of this - Composer treats
-            // a non-zero exit as a failed install.
-            $output->writeln('<comment>  Could not run it: ' . $e->getMessage() . '</comment>');
-
-            return false;
+            // package:discover must not fail because of this: Composer treats
+            // a non-zero exit from a script as a failed installation.
+            $output->writeln('<comment>  EnvCrypt setup could not run: ' . $e->getMessage() . '</comment>');
+            $output->writeln('<comment>  Run "php artisan envcrypt:install" to finish it.' . PHP_EOL . '</comment>');
         }
-
-        return true;
-    }
-
-    /**
-     * Is there a human on the other end? A terminal on STDIN, no CI marker,
-     * and no --no-interaction anywhere on the command line.
-     */
-    private function canPrompt()
-    {
-        $argv = isset($_SERVER['argv']) ? $_SERVER['argv'] : [];
-
-        if (in_array('--no-interaction', $argv, true) || in_array('-n', $argv, true)) {
-            return false;
-        }
-
-        foreach (['CI', 'CONTINUOUS_INTEGRATION', 'BUILD_NUMBER', 'GITHUB_ACTIONS'] as $marker) {
-            if (getenv($marker)) {
-                return false;
-            }
-        }
-
-        if (! defined('STDIN') || ! function_exists('stream_isatty')) {
-            return false;
-        }
-
-        return @stream_isatty(STDIN);
     }
 
     /**

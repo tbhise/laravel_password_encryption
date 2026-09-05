@@ -278,8 +278,7 @@ final class Migrator
             if ($selected === array()) {
                 $this->io->write('No variables are currently selected.');
             } else {
-                $this->io->write('The following variables appear to be database passwords');
-                $this->io->write('(they sit alongside a matching database connection\'s host, name or user):');
+                $this->io->write('Detected database password fields:');
                 $this->io->write();
 
                 foreach ($selected as $i => $key) {
@@ -416,7 +415,7 @@ final class Migrator
         $this->io->write('The database passwords themselves are not being changed.');
         $this->io->write();
 
-        return $this->io->confirm('Continue?', false);
+        return $this->io->confirm('Continue with password encryption?', false);
     }
 
     /** Record the managed list when it differs from what is already there. */

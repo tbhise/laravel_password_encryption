@@ -4,10 +4,13 @@ namespace Tusharb\EnvCrypt\Commands;
 
 use Illuminate\Console\Command;
 use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
+use Tusharb\EnvCrypt\Console\InteractiveConsole;
+use Tusharb\EnvCrypt\Elevation;
 use Tusharb\EnvCrypt\EnvCrypt;
 use Tusharb\EnvCrypt\EnvCryptSecret;
 use Tusharb\EnvCrypt\EnvFile;
 use Tusharb\EnvCrypt\Io\ConsoleIo;
+use Tusharb\EnvCrypt\Io\TerminalIo;
 use Tusharb\EnvCrypt\Migrator;
 
 /**
@@ -38,12 +41,25 @@ class InstallCommand extends Command
                             {--no-tool : Skip publishing storage/tools/envcrypt.php}
                             {--no-keygen : Do not store a secret, even if none exists}
                             {--no-encrypt : Set up only; leave the passwords in plaintext}
-                            {--force : Overwrite an existing name, config or tool}';
+                            {--force : Overwrite an existing name, config or tool}
+                            {--from-composer : Internal: started by Composer, so questions go to the console}';
 
     protected $description = 'Set this project up to use encrypted database passwords';
 
+    /**
+     * A channel to the terminal, used when this command's own STDIN is not one.
+     *
+     * @var \Tusharb\EnvCrypt\Console\InteractiveConsole|null
+     */
+    private $console = null;
+
+    /** Whether anything can be asked at all, decided once in openConsole(). */
+    private $interactive = false;
+
     public function handle()
     {
+        $this->openConsole();
+
         $this->heading('Installing');
 
         if (! $this->preflight()) {
@@ -91,6 +107,88 @@ class InstallCommand extends Command
         $this->printRemainingSteps($variable, $secretReady);
 
         return 0;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Asking, wherever the terminal happens to be                        */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Decide how this run will ask questions.
+     *
+     * Symfony's prompts read STDIN, which is a pipe when Composer invokes
+     * artisan: a question would be printed and instantly answered by
+     * end-of-input. Rather than guessing at that from inside, the caller says
+     * so with --from-composer, and this then talks to the console directly.
+     * Where there is no console either - CI, a scripted deploy - the run is
+     * genuinely unattended and asks nothing at all.
+     */
+    private function openConsole()
+    {
+        if ($this->option('no-interaction')) {
+            $this->interactive = false;
+            $this->input->setInteractive(false);
+
+            return;
+        }
+
+        // Started by a person, directly: Symfony's own prompts work, and the
+        // input object's answer is the truthful one.
+        if (! $this->option('from-composer')) {
+            $this->interactive = $this->input->isInteractive();
+
+            return;
+        }
+
+        // Started from package:discover during "composer require". STDIN is a
+        // pipe, so questions have to go to the console itself. Kernel::call()
+        // also hands the command an ArrayInput that claims to be interactive
+        // whatever STDIN is - left alone, every question would be put to that
+        // pipe and abort at end-of-input.
+        $this->console = InteractiveConsole::open();
+        $this->interactive = $this->console !== null;
+
+        if (! $this->interactive) {
+            $this->input->setInteractive(false);
+        }
+    }
+
+    /** Can this run ask the operator anything at all? */
+    private function canAsk()
+    {
+        return $this->interactive;
+    }
+
+    /**
+     * These four route every question through the console when one is open,
+     * so the same command works identically whether it was started by a person
+     * or by Composer.
+     */
+    public function confirm($question, $default = false)
+    {
+        if ($this->console !== null) {
+            return $this->console->confirm($question, $default);
+        }
+
+        return parent::confirm($question, $default);
+    }
+
+    public function ask($question, $default = null)
+    {
+        if ($this->console !== null) {
+            return $this->console->ask($question, $default);
+        }
+
+        return parent::ask($question, $default);
+    }
+
+    public function choice($question, array $choices, $default = null, $attempts = null, $multiple = false)
+    {
+        if ($this->console !== null) {
+            return $this->console->choice($question, array_values($choices), $default);
+        }
+
+        return parent::choice($question, $choices, $default, $attempts, $multiple);
     }
 
     /* ------------------------------------------------------------------ */
@@ -326,35 +424,82 @@ class InstallCommand extends Command
             return false;
         }
 
-        if (! $this->input->isInteractive()) {
-            $this->line('  skipped    no secret stored - run "php artisan db:keygen" from an');
-            $this->line('             elevated prompt.');
+        if (! $this->canAsk()) {
+            $this->line('  skipped    no secret stored - nothing can be created unattended,');
+            $this->line('             because storing it needs administrator consent.');
 
             return false;
         }
 
         $this->line('  No secret is stored for this project yet.');
-        $this->line('  Storing one needs an ELEVATED prompt (it writes to the registry).');
         $this->line('');
 
-        if (! $this->confirm('Store one now?', true)) {
+        // Try in this process first. An already-elevated terminal succeeds
+        // here and never sees a UAC dialog at all.
+        $arguments = $this->poolOption() ? ['--pool' => $this->poolOption()] : [];
+
+        if ($this->callSilent('db:keygen', $arguments) === 0
+            && EnvCryptSecret::current($this->poolOption()) !== null) {
+            $this->line('  stored     ' . $variable . ' (this prompt was already elevated)');
+            $this->warnAboutRestart();
+
+            return true;
+        }
+
+        // It needs administrator rights, and a process cannot elevate itself.
+        // Rather than stopping with instructions, ask Windows to run that one
+        // command elevated - which is what raises the consent dialog.
+        if (! Elevation::available()) {
+            $this->line('  Could not store the secret, and cannot request elevation here.');
+            $this->line('  Run "php artisan db:keygen" from an elevated prompt, then re-run this.');
+
             return false;
         }
 
-        $arguments = [];
+        $this->line('  Storing it writes to HKLM, which needs administrator rights.');
+        $this->line('  Windows will show a consent dialog for that one command only.');
+        $this->line('');
 
-        if ($this->poolOption()) {
-            $arguments['--pool'] = $this->poolOption();
+        if (! $this->confirm('Request administrator access and store the secret now?', true)) {
+            $this->line('  Skipped. Nothing can be encrypted until a secret exists.');
+
+            return false;
         }
 
-        if ($this->call('db:keygen', $arguments) !== 0) {
+        Elevation::runArtisan('db:keygen' . ($this->poolOption() ? ' --pool=' . $this->poolOption() : ''), base_path());
+
+        // Verified by reading the store back, never by trusting the exit code:
+        // the elevated process is a different process with its own console.
+        if (EnvCryptSecret::current($this->poolOption()) === null) {
             $this->line('');
-            $this->warn('No secret was stored, so nothing can be encrypted yet.');
+            $this->warn('  No secret was stored - the dialog was declined, or the write failed.');
+            $this->line('  Run "php artisan db:keygen" from an elevated prompt to see why.');
 
             return false;
         }
+
+        $this->line('  stored     ' . $variable);
+        $this->warnAboutRestart();
 
         return true;
+    }
+
+    /**
+     * A machine-wide variable reaches IIS only after WAS restarts, which is
+     * why this is said at the moment the secret is created rather than at the
+     * end, where it would be read as advice about the encryption.
+     */
+    private function warnAboutRestart()
+    {
+        $this->line('');
+        $this->line('  Back this secret up off the machine. It is the only copy, and losing');
+        $this->line('  it makes an encrypted password unrecoverable.');
+
+        if (! $this->poolOption()) {
+            $this->line('');
+            $this->line('  IIS will not see it until "iisreset" - a pool recycle is not enough');
+            $this->line('  for a machine-wide variable. Run that yourself when it suits you.');
+        }
     }
 
     /** Can this process encrypt at all - development fallback included? */
@@ -385,7 +530,7 @@ class InstallCommand extends Command
             return false;
         }
 
-        return $this->input->isInteractive();
+        return $this->canAsk();
     }
 
     private function migrate($variable)
@@ -405,7 +550,12 @@ class InstallCommand extends Command
             return 0;
         }
 
-        $migrator = new Migrator(new ConsoleIo($this), base_path(), $this->poolOption());
+        // The review and the one confirmation must reach the same terminal the
+        // rest of the questions did - which is not this command's STDIN when
+        // Composer started it.
+        $io = $this->console !== null ? new TerminalIo($this->console) : new ConsoleIo($this);
+
+        $migrator = new Migrator($io, base_path(), $this->poolOption());
         $migrator->useCandidates($selected, $this->otherPasswordKeys($selected));
 
         if ($migrator->encryptAll(false) !== 0) {

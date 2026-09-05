@@ -47,7 +47,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->assertSuccessful();
 
@@ -65,7 +65,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->assertSuccessful();
 
@@ -85,7 +85,7 @@ class InstallEncryptionTest extends TestCase
             ->doesntExpectOutputToContain('main-pass')
             ->doesntExpectOutputToContain('reporting-pass')
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->assertSuccessful();
     }
@@ -97,7 +97,7 @@ class InstallEncryptionTest extends TestCase
 
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'no')
+            ->expectsConfirmation('Continue with password encryption?', 'no')
             ->assertSuccessful();
 
         $this->assertSame(
@@ -123,7 +123,7 @@ class InstallEncryptionTest extends TestCase
             ->expectsQuestion('Choice', 'r')
             ->expectsQuestion('Enter numbers to remove (comma-separated)', '2')
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->assertSuccessful();
 
@@ -137,7 +137,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->assertSuccessful();
 
@@ -152,7 +152,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'yes')
             ->expectsQuestion('What should happen to it?', 'delete')
             ->expectsOutputToContain('Deleted.')
@@ -166,7 +166,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->expectsOutputToContain('envcrypt:restore')
             ->assertSuccessful();
@@ -178,7 +178,7 @@ class InstallEncryptionTest extends TestCase
     {
         $this->install()
             ->expectsQuestion('Choice', '')
-            ->expectsConfirmation('Continue?', 'yes')
+            ->expectsConfirmation('Continue with password encryption?', 'yes')
             ->expectsConfirmation('Is the application working?', 'no')
             ->expectsOutputToContain('Restart it yourself')
             ->assertSuccessful();

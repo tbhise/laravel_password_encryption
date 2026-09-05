@@ -43,59 +43,92 @@ Laravel ships them; `db:secret-check` fails if it finds decryption in there.
 composer require tusharb/laravel-envcrypt
 ```
 
-Composer can only put files in `vendor/`. A library cannot register a Composer
-script — only the root project can — so the package uses the next hook
-available: `package:discover`, which Composer runs immediately afterwards. If a
-terminal is attached, it offers to set the project up there and then:
+Composer's `package:discover` hook runs the setup automatically: the project is
+named from `APP_NAME`, the config and standalone tool are published, the wiring
+is verified, and the secret is created if the server has none — asking Windows
+for elevation only for that one step.
+
+Encryption is the only thing it will not do on its own. It stops at:
 
 ```
-  EnvCrypt is in vendor/, but this project is not set up yet.
+Detected database password fields:
 
-  Set it up now? [Y/n]
+  1. DB_PASSWORD
+  2. DB_PASSWORD_SECOND
+  3. DB_PASSWORD_REPORTING
+
+Continue with password encryption? [y/N]
 ```
 
-Answer `n`, or run it later, and it is the same command:
+Answer `y` and it backs `.env` up, encrypts, runs `config:clear` and
+`db:secret-check`, then asks you to restart IIS yourself and confirm the
+application works before offering to delete the backup.
+
+Answer `n` and nothing is touched — the project stays set up, and
+`php artisan db:password-encrypt-all` picks up where you left off.
+
+**On Windows that question is asked by `db:password-encrypt-all`, not by
+Composer** — see below for exactly why.
+
+### How far the automation goes
+
+On **Linux and macOS** the setup runs all the way to the encryption
+confirmation: Composer redirects the child's STDIN, but /dev/tty still
+reaches the terminal, so the question is asked and waits.
+
+On **Windows** it stops one step earlier. Composer runs artisan with STDIN
+redirected, and in that state PHP cannot read the console input buffer -
+`fopen('CONIN$', 'r')` fails outright, and the one mode that does open
+returns end-of-input immediately instead of blocking. The same probe without
+a redirected STDIN blocks correctly, so the limitation is the redirection,
+not the console.
+
+So on Windows `composer require` gives you the whole setup - naming,
+publishing, verification, secret creation, field detection - and then stops,
+leaving one command for the encryption itself:
 
 ```bash
-php artisan envcrypt:install
+php artisan db:password-encrypt-all
 ```
 
-**An unattended run never gets that prompt.** No TTY, a `CI` variable, or
-`--no-interaction` anywhere on the command line, and the package prints the
-instruction instead — a deploy or CI run must not be able to alter credentials.
+which shows the detected fields and asks `Continue with password encryption?`
+in your own terminal, where prompting works.
 
-### What `envcrypt:install` does
+Where no terminal can be reached at all - CI, a scripted deploy,
+`COMPOSER_NO_INTERACTION` - the setup still runs and **stops before
+encryption**. An unattended process never rewrites credentials.
 
-1. **Names this project's secret** — from `APP_NAME`, falling back to the
-   directory name, then to a prompt. The name goes in `.env` as
-   `ENVCRYPT_KEY_VAR` (e.g. `ACME_BILLING_BUILD_TAG`). Two projects
-   sharing a name would share a secret, so each gets its own.
-2. **Publishes** `config/envcrypt.php` and `storage/tools/envcrypt.php`.
-3. **Verifies the wiring** (`envcrypt:verify`).
-4. **Stores a secret** if the server has none, by offering `db:keygen`. An
-   existing secret is always kept — replacing it would make every value already
-   encrypted under it unreadable.
-5. **Finds the database passwords** — from Laravel's resolved database config,
-   not from variable names. Every connection's password is matched back to the
-   `.env` line that supplies it, so `DB_PASSWORD_REPORTING` is found without any
-   naming convention predicting it, and `MAIL_PASSWORD` / `REDIS_PASSWORD` are
-   excluded because they are not any connection's password.
-6. **Shows the field names and waits.** Only names are ever printed. You can
-   remove entries (`r`), add one (`a`), cancel (`c`), or confirm. Nothing is
-   encrypted until you answer.
-7. **Backs `.env` up**, encrypts, and reads every value back before reporting
-   success. If anything fails to verify, `.env` is restored.
-8. **Runs `config:clear` and `db:secret-check`.**
-9. **Tells you to restart IIS yourself**, then asks whether the application
-   works — and offers to delete, keep or move the plaintext backup based on
-   your answer.
+### Where administrator rights are needed
 
-Options: `--project=NAME`, `--pool="AppPool"`, `--no-keygen`, `--no-encrypt`,
-`--no-tool`, `--force`.
+Only one operation needs them: writing the secret to
+`HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment`.
+
+The installer tries in the current process first, so an already-elevated
+terminal never sees a dialog. Otherwise it asks Windows to run that single
+command elevated, which raises the standard UAC consent prompt — the secret is
+generated *inside* that elevated process, so it never appears on a command
+line. Everything else — naming, publishing, detection, encryption, checks —
+runs unprivileged.
+
+Decline the dialog and setup continues; only the encryption step is skipped,
+because there is nothing to encrypt with.
+
+### Running it by hand
+
+```bash
+php artisan envcrypt:install                      # same flow, any time
+php artisan envcrypt:install --project=BILLING    # name it explicitly
+php artisan envcrypt:install --pool="AppPool"     # secret on an IIS pool
+php artisan envcrypt:install --no-encrypt         # set up only
+```
+
+It is idempotent — a second run reports `unchanged` and finds nothing left to
+encrypt — so it is safe in a deploy script. Once the project has named its
+secret, `composer update` never re-enters the setup.
 
 ### What it will not do
 
-- Encrypt without an interactive confirmation.
+- Encrypt without your explicit `y`.
 - Replace a secret that already exists (that is `db:key-rotate`, which
   re-encrypts as it goes).
 - Encrypt an `enc:` value a second time.

@@ -2,6 +2,48 @@
 
 All notable changes to `tusharb/laravel-envcrypt` are documented here.
 
+## 1.1.0 - 2026-09-05
+
+Setup now happens as part of `composer require`, rather than being a list of
+commands printed for someone to run afterwards.
+
+### Added
+
+- The whole setup runs from Composer's `package:discover` hook — naming,
+  publishing, verification, secret creation and field detection — stopping at
+  the single encryption confirmation.
+- `InteractiveConsole`, which reaches the terminal through `CONIN$` / `CONOUT$`
+  on Windows and `/dev/tty` elsewhere. Composer wires the artisan child's STDIN
+  to a pipe, so a question asked there was answered instantly by end-of-input;
+  the console itself is still attached to that process and can be opened
+  directly.
+- `Elevation`, which asks Windows to run `db:keygen` elevated when HKLM needs
+  administrator rights, instead of stopping with instructions. The secret is
+  generated inside the elevated process, so it never travels on a command line.
+- `--from-composer`, the internal flag the provider passes so the command knows
+  its STDIN is a pipe rather than having to guess.
+
+### Changed
+
+- The encryption confirmation now reads `Continue with password encryption?`,
+  under a `Detected database password fields:` heading.
+- The secret is named `<PROJECT>_BUILD_TAG` with no vendor prefix; a leading
+  digit gets an `APP_` prefix. Existing projects keep the name recorded in their
+  own `.env`.
+- `Application::storagePath()` takes no argument before Laravel 9, so the
+  publish target for `storage/tools/envcrypt.php` is now built by hand — that
+  was why publishing it failed on Laravel 8.
+- The config repository is resolved with `make('config')` rather than by array
+  access on the container contract.
+
+### Unchanged, deliberately
+
+- Encryption still requires an explicit `y`; there is no `--assume-yes`.
+- Unattended runs — CI, `COMPOSER_NO_INTERACTION`, no terminal — set the project
+  up and stop before encryption.
+- No secret is regenerated, no `enc:` value re-encrypted, no `iisreset` run for
+  you, and no password printed.
+
 ## 1.0.0 - 2026-09-05
 
 First stable release. Packaged from the single-file `envcrypt-kit.php`
