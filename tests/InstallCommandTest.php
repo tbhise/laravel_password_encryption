@@ -4,60 +4,20 @@ namespace Tusharb\EnvCrypt\Tests;
 
 use Tusharb\EnvCrypt\EnvCrypt;
 use Tusharb\EnvCrypt\EnvCryptConnector;
-use Tusharb\EnvCrypt\EnvCryptServiceProvider;
 use Tusharb\EnvCrypt\EnvFile;
-use Orchestra\Testbench\TestCase;
 
 /**
  * The installer against a real booted application.
  *
- * These cover the step Composer cannot do for itself: turning files in
- * vendor/ into a project that has named its own secret.
+ * These cover the step Composer cannot do for itself - turning files in
+ * vendor/ into a project that has named its own secret - and, just as
+ * importantly, the things it must never do on its own.
  */
 class InstallCommandTest extends TestCase
 {
-    protected function getPackageProviders($app)
-    {
-        return [EnvCryptServiceProvider::class];
-    }
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        // A project with a plaintext password, as it looks before migration.
-        file_put_contents($this->envPath(), "APP_ENV=local\nDB_CONNECTION=mysql\nDB_PASSWORD=plain-text\n");
-
-        EnvCrypt::reset();
-        EnvCrypt::configure(['base_path' => $this->app->basePath()]);
-    }
-
-    protected function tearDown(): void
-    {
-        foreach ([$this->envPath(), config_path('envcrypt.php'), storage_path('tools/envcrypt.php')] as $path) {
-            if (is_file($path)) {
-                unlink($path);
-            }
-        }
-
-        EnvCrypt::reset();
-
-        parent::tearDown();
-    }
-
-    private function envPath()
-    {
-        return $this->app->basePath('.env');
-    }
-
-    private function envContents()
-    {
-        return file_get_contents($this->envPath());
-    }
-
     public function test_it_names_the_secret_after_the_project()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
             ->assertSuccessful();
 
         $this->assertSame(
@@ -66,9 +26,38 @@ class InstallCommandTest extends TestCase
         );
     }
 
+    /** The application name comes from APP_NAME first. */
+    public function test_it_takes_the_identifier_from_app_name()
+    {
+        $this->writeEnv("APP_ENV=local\nAPP_NAME=\"Acme Billing\"\nDB_PASSWORD=plain-text\n");
+
+        $this->artisan('envcrypt:install', ['--no-keygen' => true])->assertSuccessful();
+
+        $this->assertSame(
+            'TUSHARB_ACME_BILLING_BUILD_TAG',
+            EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
+        );
+    }
+
+    /** The stock APP_NAME identifies nothing, so it must not become the name. */
+    public function test_it_falls_back_to_the_directory_when_app_name_is_the_default()
+    {
+        $this->writeEnv("APP_ENV=local\nAPP_NAME=Laravel\nDB_PASSWORD=plain-text\n");
+
+        $this->artisan('envcrypt:install', ['--no-keygen' => true])->assertSuccessful();
+
+        $directory = strtoupper(preg_replace('/[^A-Za-z0-9]+/', '_', basename($this->app->basePath())));
+
+        $this->assertSame(
+            'TUSHARB_' . trim($directory, '_') . '_BUILD_TAG',
+            EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
+        );
+    }
+
     public function test_it_publishes_the_config_and_the_standalone_tool()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])->assertSuccessful();
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
+            ->assertSuccessful();
 
         $this->assertFileExists(config_path('envcrypt.php'));
         $this->assertFileExists(storage_path('tools/envcrypt.php'));
@@ -76,8 +65,11 @@ class InstallCommandTest extends TestCase
 
     public function test_it_can_skip_the_standalone_tool()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-tool' => true])
-            ->assertSuccessful();
+        $this->artisan('envcrypt:install', [
+            '--project' => 'billing',
+            '--no-keygen' => true,
+            '--no-tool' => true,
+        ])->assertSuccessful();
 
         $this->assertFileDoesNotExist(storage_path('tools/envcrypt.php'));
     }
@@ -85,48 +77,68 @@ class InstallCommandTest extends TestCase
     /** Safe in a deploy script means a second run must change nothing. */
     public function test_running_it_twice_changes_nothing()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])->assertSuccessful();
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
+            ->assertSuccessful();
+
         $first = $this->envContents();
 
-        $this->artisan('envcrypt:install')
+        $this->artisan('envcrypt:install', ['--no-keygen' => true])
             ->expectsOutputToContain('unchanged  ENVCRYPT_KEY_VAR')
             ->assertSuccessful();
 
         $this->assertSame($first, $this->envContents());
     }
 
-    /** It must never quietly encrypt: that needs an elevated prompt first. */
+    /**
+     * The safety rule that matters most: setting the project up must never
+     * rewrite a credential on its own.
+     */
     public function test_it_leaves_the_password_in_plaintext()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])->assertSuccessful();
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
+            ->assertSuccessful();
 
         $this->assertSame('plain-text', EnvFile::value($this->envContents(), 'DB_PASSWORD'));
     }
 
+    /** A non-interactive run may set the project up, but never touch credentials. */
+    public function test_a_non_interactive_run_never_encrypts()
+    {
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-interaction' => true])
+            ->assertSuccessful();
+
+        $this->assertSame('plain-text', EnvFile::value($this->envContents(), 'DB_PASSWORD'));
+        $this->assertNotNull(EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR'));
+    }
+
     public function test_it_prints_the_steps_the_operator_still_has_to_run()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
             ->expectsOutputToContain('php artisan db:keygen')
             ->expectsOutputToContain('php artisan db:password-encrypt-all')
             ->expectsOutputToContain('php artisan db:secret-check')
             ->assertSuccessful();
     }
 
+    /** Removing the package without decrypting first is the known hazard. */
+    public function test_it_points_at_uninstall_before_removal()
+    {
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
+            ->expectsOutputToContain('envcrypt:uninstall')
+            ->assertSuccessful();
+    }
+
     public function test_a_pool_is_recorded_and_carried_into_the_instructions()
     {
-        $this->artisan('envcrypt:install', ['--project' => 'billing', '--pool' => 'BillingPool'])
+        $this->artisan('envcrypt:install', [
+            '--project' => 'billing',
+            '--pool' => 'BillingPool',
+            '--no-keygen' => true,
+        ])
             ->expectsOutputToContain('db:keygen --pool="BillingPool"')
             ->assertSuccessful();
 
         $this->assertSame('BillingPool', EnvFile::value($this->envContents(), 'ENVCRYPT_POOL'));
-    }
-
-    /** Without a name there is nothing to install, and no default is safe. */
-    public function test_it_refuses_to_guess_a_name_when_not_interactive()
-    {
-        $this->artisan('envcrypt:install', ['--no-interaction' => true])->assertFailed();
-
-        $this->assertNull(EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR'));
     }
 
     public function test_verify_fails_before_install_and_passes_after()
@@ -135,7 +147,8 @@ class InstallCommandTest extends TestCase
             ->expectsOutputToContain('envcrypt:install')
             ->assertFailed();
 
-        $this->artisan('envcrypt:install', ['--project' => 'billing'])->assertSuccessful();
+        $this->artisan('envcrypt:install', ['--project' => 'billing', '--no-keygen' => true])
+            ->assertSuccessful();
 
         $this->artisan('envcrypt:verify')->assertSuccessful();
     }
@@ -153,13 +166,7 @@ class InstallCommandTest extends TestCase
         $key = EnvCrypt::generateRootKey();
         $payload = EnvCrypt::encrypt('real-password', $key);
 
-        file_put_contents(
-            $this->envPath(),
-            "APP_ENV=local\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\nTUSHARB_TESTS_BUILD_TAG={$key}\n"
-        );
-
-        EnvCrypt::reset();
-        EnvCrypt::configure(['base_path' => $this->app->basePath()]);
+        $this->useDevelopmentSecret($key);
 
         $inner = new class implements \Illuminate\Database\Connectors\ConnectorInterface {
             public $seen;

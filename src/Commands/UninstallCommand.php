@@ -8,13 +8,16 @@ use Tusharb\EnvCrypt\EnvCrypt;
 use Tusharb\EnvCrypt\EnvCryptSecret;
 
 /**
- * Removes what envcrypt:install put in place, and the secret itself.
+ * Takes the project back to where it started, in the order that keeps it
+ * working throughout.
  *
- * It does NOT touch the "enc:" values in .env: removing the secret while a
- * value still depends on it is the one irreversible mistake available here, so
- * that case stops the command instead. Put the plaintext passwords back first
- * - "php artisan db:password-decrypt --key=NAME" prints each one - or pass
- * --force if they are genuinely disposable.
+ * The hazard this exists to remove: "composer remove" deletes the code that
+ * decrypts, while .env still says DB_PASSWORD="enc:...". Nothing then reads
+ * that value, every query fails, and the secret needed to recover it may
+ * already have been cleaned up. So the passwords go back to plaintext FIRST,
+ * and only then is anything removed.
+ *
+ * Run this BEFORE composer remove.
  */
 class UninstallCommand extends Command
 {
@@ -22,59 +25,126 @@ class UninstallCommand extends Command
 
     protected $signature = 'envcrypt:uninstall
                             {--pool= : The application pool holding the secret, if not the registry}
-                            {--keep-secret : Leave the stored secret alone}
+                            {--keep-secret : Leave the stored secret in place}
+                            {--keep-encrypted : Leave the "enc:" values in .env alone}
                             {--force : Remove the secret even while encrypted values depend on it}';
 
-    protected $description = 'Remove the published files and the stored secret';
+    protected $description = 'Decrypt .env and remove this package\'s files and secret';
 
     public function handle()
     {
-        $this->line('Uninstalling');
-        $this->line('------------');
+        $this->heading('Uninstalling');
 
         $variable = EnvCrypt::rootKeyVar();
 
-        // Read before anything is deleted: .env is the only place this
-        // project's secret name is recorded.
+        if (! $this->restorePlaintext()) {
+            return 1;
+        }
+
+        $this->removePublishedFiles();
+        $this->removeSecret($variable);
+
+        $this->line('');
+        $this->call('config:clear');
+
+        $this->heading('Done');
+
+        $remaining = $this->encryptedTargetKeyNames();
+
+        if ($remaining === []) {
+            $this->line('.env holds plaintext passwords again, so the application works with or');
+            $this->line('without this package. It is now safe to run:');
+            $this->line('');
+            $this->line('  composer remove tusharb/laravel-envcrypt');
+        } else {
+            $this->warn('These values in .env are STILL encrypted: ' . implode(', ', $remaining));
+            $this->line('');
+            $this->line('Do NOT remove the package yet - nothing would be able to decrypt them.');
+            $this->line('Put the plaintext passwords back first:');
+            $this->line('  php artisan db:password-decrypt        (needs the secret)');
+            $this->line('  php artisan envcrypt:restore           (from a .env backup)');
+        }
+
+        $this->line('');
+        $this->line('Left alone: config/database.php, and every .env value not managed here.');
+        $this->line('Your database passwords were never changed on the database side.');
+
+        return 0;
+    }
+
+    /**
+     * Put the passwords back in plaintext while the code that can read them is
+     * still installed. This is the step that makes removal survivable.
+     */
+    private function restorePlaintext()
+    {
         $encrypted = $this->encryptedTargetKeyNames();
+
+        if ($encrypted === []) {
+            $this->line('  nothing  no encrypted values in .env');
+
+            return true;
+        }
+
+        if ($this->option('keep-encrypted')) {
+            $this->warn('  kept     ' . count($encrypted) . ' encrypted value(s) (--keep-encrypted)');
+
+            return true;
+        }
+
+        $this->line('  found    ' . count($encrypted) . ' encrypted value(s): ' . implode(', ', $encrypted));
+        $this->line('');
+        $this->line('  They must go back to plaintext before the package is removed, or the');
+        $this->line('  application will not be able to connect.');
+        $this->line('');
+
+        $arguments = $this->poolOption() ? ['--pool' => $this->poolOption()] : [];
+
+        if ($this->call('db:password-decrypt', $arguments) !== 0) {
+            $this->line('');
+            $this->error('Could not decrypt .env, so nothing was removed.');
+            $this->line('The package is untouched and the application still works.');
+            $this->line('Restore a backup instead if the secret is gone: php artisan envcrypt:restore');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    private function removePublishedFiles()
+    {
+        $this->heading('Removing files');
 
         foreach ([config_path('envcrypt.php'), storage_path('tools/envcrypt.php')] as $path) {
             if (! is_file($path)) {
                 continue;
             }
 
-            if (unlink($path)) {
-                $this->line('  removed  ' . str_replace(base_path() . DIRECTORY_SEPARATOR, '', $path));
-            } else {
-                $this->line('  COULD NOT remove ' . $path);
-            }
+            $this->line(@unlink($path)
+                ? '  removed  ' . str_replace(base_path() . DIRECTORY_SEPARATOR, '', $path)
+                : '  COULD NOT remove ' . $path);
         }
-
-        $this->removeSecret($variable, $encrypted);
-
-        $this->line('');
-        $this->line('Left alone: .env, config/database.php, and every "enc:" value.');
-        $this->line('');
-        $this->line('If a managed value is still an "enc:" value, the application will not');
-        $this->line('connect once the package is removed - put the plaintext password back');
-        $this->line('in .env first. Then: composer remove tusharb/laravel-envcrypt');
-
-        return 0;
     }
 
-    private function removeSecret($variable, array $encrypted)
+    private function removeSecret($variable)
     {
+        $this->heading('Removing the secret');
+
         if ($this->option('keep-secret')) {
             $this->line('  kept     ' . $variable . ' (--keep-secret)');
 
             return;
         }
 
+        // Re-read: the decryption above should have emptied this, and if it
+        // did not, the secret is still holding the only way back.
+        $encrypted = $this->encryptedTargetKeyNames();
+
         if ($encrypted !== [] && ! $this->option('force')) {
             $this->line('  kept     ' . $variable);
-            $this->line('           These .env values still look encrypted: ' . implode(', ', $encrypted));
-            $this->line('           Leaving the secret in place so they stay recoverable.');
-            $this->line('           Decrypt them first, or re-run with --force.');
+            $this->line('           .env still holds encrypted values: ' . implode(', ', $encrypted));
+            $this->line('           Removing the secret now would make them unrecoverable.');
 
             return;
         }
@@ -85,8 +155,8 @@ class UninstallCommand extends Command
             return;
         }
 
-        if (! $this->requireWindows()) {
-            return;
+        if (! EnvCryptSecret::elevated()) {
+            $this->warn('  Could not confirm this prompt is elevated - trying anyway.');
         }
 
         $pool = $this->poolOption();
@@ -108,5 +178,12 @@ class UninstallCommand extends Command
         $this->line('  COULD NOT remove ' . $variable . ': ' . (is_string($result) ? $result : 'unknown error'));
         $this->line('  From an elevated prompt, by hand:');
         $this->line('    reg delete "' . EnvCryptSecret::HIVE . '" /v ' . $variable . ' /f');
+    }
+
+    private function heading($text)
+    {
+        $this->line('');
+        $this->line($text);
+        $this->line(str_repeat('-', strlen($text)));
     }
 }

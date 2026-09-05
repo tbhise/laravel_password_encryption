@@ -29,11 +29,45 @@ final class Migrator
     /** @var string|null */
     private $pool;
 
+    /** @var string[]|null keys supplied by the caller instead of guessed */
+    private $candidates = null;
+
+    /** @var string[] password-like keys the caller ruled out, shown but never selected */
+    private $rejected = array();
+
+    /** @var string|null the backup this run took, for the caller to offer to clean up */
+    private $backupPath = null;
+
+    /** The .env backup written by the last encryptAll(), or null if none was. */
+    public function backupPath()
+    {
+        return $this->backupPath;
+    }
+
     public function __construct(Io $io, $root, $pool = null)
     {
         $this->io = $io;
         $this->root = rtrim(str_replace('\\', '/', $root), '/');
         $this->pool = $pool ?: null;
+    }
+
+    /**
+     * Use this list rather than the name-based sweep.
+     *
+     * An artisan command can ask Laravel which keys really are a connection's
+     * password (see ConnectionKeys); the standalone tool has no framework to
+     * ask, so it falls back to guessing from names. Both then go through the
+     * same review, confirmation, backup and verification below.
+     *
+     * @param string[] $candidates keys proposed for encryption
+     * @param string[] $rejected   other password-like keys, listed but not selected
+     */
+    public function useCandidates(array $candidates, array $rejected = array())
+    {
+        $this->candidates = array_values($candidates);
+        $this->rejected = array_values($rejected);
+
+        return $this;
     }
 
     /* ------------------------------------------------------------------ */
@@ -54,7 +88,13 @@ final class Migrator
 
         $contents = file_get_contents($envPath);
 
-        list($database, $other) = TargetKeys::classify($contents);
+        if ($this->candidates !== null) {
+            $database = $this->candidates;
+            $other = $this->rejected;
+        } else {
+            list($database, $other) = TargetKeys::classify($contents);
+        }
+
         $declared = TargetKeys::declared($contents);
 
         // A previously confirmed list is authoritative. Re-running only asks
@@ -148,11 +188,17 @@ final class Migrator
             }
         }
 
-        $backup = $envPath . '.encrypt-backup-' . date('Ymd-His');
+        // Taken only now: everything above could still abort, and a backup
+        // holding every plaintext password is not a file to leave lying about
+        // for a run that changed nothing.
+        $store = new EnvBackup($this->root);
+        $backup = $store->create('encrypt');
 
-        if (file_put_contents($backup, $contents) === false) {
-            return $this->fail('Could not write a backup to ' . $backup . '. Nothing was changed.');
+        if ($backup === null) {
+            return $this->fail('Could not write a backup to ' . $store->directory() . '. Nothing was changed.');
         }
+
+        $this->backupPath = $backup;
 
         $this->io->write();
         $this->io->write('Backup written: ' . $backup);
@@ -169,7 +215,7 @@ final class Migrator
 
         $updated = EnvFile::withValueSet($updated, EnvCrypt::TARGET_KEYS_VAR, implode(',', $selected));
 
-        if (file_put_contents($envPath, $updated) === false) {
+        if (! $store->writeEnv($updated)) {
             return $this->fail('.env could not be written. Nothing was changed.');
         }
 
@@ -190,7 +236,7 @@ final class Migrator
         }
 
         if ($bad !== array()) {
-            file_put_contents($envPath, $contents);
+            $store->writeEnv($contents);
 
             return $this->fail(
                 'These values did not read back correctly: ' . implode(', ', $bad)

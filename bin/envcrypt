@@ -38,6 +38,7 @@ require_once $src . '/EnvFile.php';
 require_once $src . '/EnvCrypt.php';
 require_once $src . '/EnvCryptSecret.php';
 require_once $src . '/TargetKeys.php';
+require_once $src . '/EnvBackup.php';
 require_once $src . '/Io/Io.php';
 require_once $src . '/Io/PlainIo.php';
 require_once $src . '/Migrator.php';

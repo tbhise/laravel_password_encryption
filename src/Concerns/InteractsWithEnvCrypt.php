@@ -54,6 +54,50 @@ trait InteractsWithEnvCrypt
         return $keys === [] ? ['DB_PASSWORD'] : $keys;
     }
 
+    /** @return \Tusharb\EnvCrypt\EnvBackup */
+    protected function backups()
+    {
+        return new \Tusharb\EnvCrypt\EnvBackup(base_path());
+    }
+
+    /**
+     * Which .env keys really are a database connection's password, according
+     * to Laravel's own resolved config rather than to their names.
+     *
+     * @return \Tusharb\EnvCrypt\ConnectionKeys
+     */
+    protected function connectionKeys()
+    {
+        return new \Tusharb\EnvCrypt\ConnectionKeys(
+            (array) config('database.connections', []),
+            $this->envContents(),
+            array_keys((array) config('envcrypt.connectors', []))
+        );
+    }
+
+    /**
+     * Password-like keys that are NOT a database connection's password.
+     *
+     * Listed during review so an operator can see that MAIL_PASSWORD and
+     * REDIS_PASSWORD were considered and deliberately left alone, rather than
+     * wondering whether they were missed.
+     *
+     * @param string[] $selected
+     * @return string[]
+     */
+    protected function otherPasswordKeys(array $selected)
+    {
+        $others = [];
+
+        foreach (\Tusharb\EnvCrypt\EnvFile::matchingKeys($this->envContents(), '/PASSWORD/i') as $key => $value) {
+            if (! in_array($key, $selected, true) && $key !== \Tusharb\EnvCrypt\EnvCrypt::TARGET_KEYS_VAR) {
+                $others[] = $key;
+            }
+        }
+
+        return $others;
+    }
+
     /** The pool named on the command line, else the configured one. */
     protected function poolOption()
     {

@@ -5,19 +5,28 @@ namespace Tusharb\EnvCrypt\Commands;
 use Illuminate\Console\Command;
 use Tusharb\EnvCrypt\Concerns\InteractsWithEnvCrypt;
 use Tusharb\EnvCrypt\EnvCrypt;
+use Tusharb\EnvCrypt\EnvCryptSecret;
 use Tusharb\EnvCrypt\EnvFile;
+use Tusharb\EnvCrypt\Io\ConsoleIo;
+use Tusharb\EnvCrypt\Migrator;
 
 /**
- * Sets the project up, and says what is left to do.
+ * Sets the project up, end to end, asking before anything irreversible.
  *
  * Composer can only put files in vendor/. This is the step that turns them
  * into a working installation: it names this project's secret, publishes the
- * config and the standalone tool, and prints the remaining operator steps -
- * the ones no package can perform for itself, because they need an elevated
- * prompt and the database password.
+ * config and the standalone tool, stores a secret if the server has none, and
+ * - only with an explicit confirmation - migrates the passwords in .env.
  *
- * Idempotent, so it is safe in a deploy script: a second run reports
- * "unchanged" and changes nothing.
+ * Two things it will not do, deliberately:
+ *
+ *  - encrypt anything without a review and a yes/no answer, so a scripted or
+ *    non-interactive run can never alter credentials;
+ *  - restart IIS. That decision affects every site on the server and belongs
+ *    to whoever is watching the traffic.
+ *
+ * Idempotent: a second run reports "unchanged" and finds nothing left to
+ * encrypt.
  */
 class InstallCommand extends Command
 {
@@ -27,6 +36,8 @@ class InstallCommand extends Command
                             {--project= : Short identifier for this project, e.g. BILLING}
                             {--pool= : Record an IIS application pool as this project\'s secret store}
                             {--no-tool : Skip publishing storage/tools/envcrypt.php}
+                            {--no-keygen : Do not store a secret, even if none exists}
+                            {--no-encrypt : Set up only; leave the passwords in plaintext}
                             {--force : Overwrite an existing name, config or tool}';
 
     protected $description = 'Set this project up to use encrypted database passwords';
@@ -35,18 +46,7 @@ class InstallCommand extends Command
     {
         $this->heading('Installing');
 
-        $envPath = $this->envPath();
-
-        if (! is_file($envPath)) {
-            $this->error('No .env found at ' . $envPath . '.');
-            $this->line('Copy .env.example to .env first - there is nothing to protect yet.');
-
-            return 1;
-        }
-
-        if (! is_writable($envPath)) {
-            $this->error('.env is not writable at ' . $envPath . '.');
-
+        if (! $this->preflight()) {
             return 1;
         }
 
@@ -69,8 +69,8 @@ class InstallCommand extends Command
         $this->publishTool();
 
         // The provider configured EnvCrypt before .env said any of this, so
-        // tell it now - otherwise the verification below, and any command
-        // chained after this one, would still use the old name.
+        // tell it now - otherwise everything below would still use the old
+        // name.
         EnvCrypt::configure(['key_var' => $variable]);
 
         $this->line('');
@@ -82,19 +82,52 @@ class InstallCommand extends Command
             return 1;
         }
 
-        $this->printNextSteps($variable);
+        $secretReady = $this->ensureSecret($variable);
+
+        if ($this->shouldEncrypt($secretReady)) {
+            return $this->migrate($variable);
+        }
+
+        $this->printRemainingSteps($variable, $secretReady);
 
         return 0;
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Setup                                                              */
+    /* ------------------------------------------------------------------ */
+
+    private function preflight()
+    {
+        $envPath = $this->envPath();
+
+        if (! is_file($envPath)) {
+            $this->error('No .env found at ' . $envPath . '.');
+            $this->line('Copy .env.example to .env first - there is nothing to protect yet.');
+
+            return false;
+        }
+
+        if (! is_writable($envPath)) {
+            $this->error('.env is not writable at ' . $envPath . '.');
+
+            return false;
+        }
+
+        return true;
     }
 
     /**
      * The name of this project's secret.
      *
-     * A project identifier goes in it so two projects on one server never
-     * share a secret - an "enc:" value from one would otherwise decrypt in the
-     * other, and one compromise would expose every database on the box. The
-     * name also says nothing about what it holds, so it does not stand out in
-     * a configuration dump. That buys time against untargeted scanning and
+     * APP_NAME first, because it is what the project already calls itself; the
+     * directory name second; a prompt last. The identifier matters because two
+     * projects on one server sharing a name share a secret - an "enc:" value
+     * from one would decrypt in the other, and one compromise would expose
+     * every database on the box.
+     *
+     * The name also says nothing about what it holds, so it does not stand out
+     * in a configuration dump. That buys time against untargeted scanning and
      * nothing more; it is not a security control.
      */
     private function resolveSecretName()
@@ -105,31 +138,37 @@ class InstallCommand extends Command
             return $existing;
         }
 
-        $project = $this->option('project');
+        $project = $this->option('project') ?: $this->guessProject();
 
-        if (! $project) {
-            if (! $this->input->isInteractive()) {
-                $this->error('No project identifier given.');
-                $this->line('Re-run with --project=NAME, e.g. --project=BILLING.');
-
-                return null;
-            }
-
-            $project = $this->ask(
-                'Short identifier for this project',
-                $this->normalise(basename(base_path()))
-            );
+        if ($project === '' && $this->input->isInteractive()) {
+            $project = (string) $this->ask('Short identifier for this project');
         }
 
         $project = $this->normalise($project);
 
         if ($project === '') {
-            $this->error('That identifier has no letters or digits in it.');
+            $this->error('Could not work out a project identifier.');
+            $this->line('Re-run with --project=NAME, e.g. --project=BILLING.');
 
             return null;
         }
 
         return 'TUSHARB_' . $project . '_BUILD_TAG';
+    }
+
+    /**
+     * APP_NAME, unless it is Laravel's untouched default - which identifies
+     * nothing, and would give two stock projects the same secret name.
+     */
+    private function guessProject()
+    {
+        $appName = $this->normalise(EnvFile::value($this->envContents(), 'APP_NAME'));
+
+        if ($appName !== '' && $appName !== 'LARAVEL') {
+            return $appName;
+        }
+
+        return $this->normalise(basename(base_path()));
     }
 
     /**
@@ -147,9 +186,7 @@ class InstallCommand extends Command
             return true;
         }
 
-        $updated = EnvFile::withValueSet($contents, 'ENVCRYPT_KEY_VAR', $variable);
-
-        if (file_put_contents($this->envPath(), $updated) === false) {
+        if (! $this->backups()->writeEnv(EnvFile::withValueSet($contents, 'ENVCRYPT_KEY_VAR', $variable))) {
             $this->error('Could not write .env. Add this line by hand:');
             $this->line('    ENVCRYPT_KEY_VAR=' . $variable);
 
@@ -177,7 +214,7 @@ class InstallCommand extends Command
             return;
         }
 
-        file_put_contents($this->envPath(), EnvFile::withValueSet($contents, 'ENVCRYPT_POOL', $pool));
+        $this->backups()->writeEnv(EnvFile::withValueSet($contents, 'ENVCRYPT_POOL', $pool));
         $this->line('  wrote      ENVCRYPT_POOL=' . $pool . ' to .env');
     }
 
@@ -236,44 +273,272 @@ class InstallCommand extends Command
         $this->callSilent('vendor:publish', $arguments);
     }
 
-    private function printNextSteps($variable)
+    /* ------------------------------------------------------------------ */
+    /* The secret                                                         */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Make sure a secret exists, without ever replacing one that does.
+     *
+     * Generating over a live secret is the one unrecoverable action available
+     * here: every value already encrypted under the old one becomes
+     * permanently unreadable. So an existing secret is always kept, and
+     * changing it is db:key-rotate's job, which re-encrypts as it goes.
+     */
+    private function ensureSecret($variable)
     {
-        $pool = $this->option('pool') ?: EnvFile::value($this->envContents(), 'ENVCRYPT_POOL');
-        $poolOption = $pool ? ' --pool="' . $pool . '"' : '';
+        $this->heading('Secret');
 
-        $this->heading('Next steps');
-        $this->line('These need an elevated prompt and your database password, so they are');
-        $this->line('yours to run. Nothing above encrypted anything.');
-        $this->line('');
-        $this->line('1. Store the secret, from an ELEVATED prompt (once per server):');
-        $this->line('     php artisan db:keygen' . $poolOption);
+        if (EnvCryptSecret::onWindows() && EnvCryptSecret::current($this->poolOption()) !== null) {
+            $this->line('  unchanged  a secret is already stored - keeping it');
+
+            return true;
+        }
+
+        // A developer machine reaches this with the secret in .env, which
+        // EnvCrypt accepts only while APP_ENV is local. Asking such a machine
+        // for an elevated prompt it does not need would be an invented
+        // obstacle, so what actually matters is asked instead: can this
+        // process encrypt?
+        if ($this->secretIsUsable()) {
+            $this->line('  ok         a usable secret is already available to this process');
+
+            return true;
+        }
+
+        if (! EnvCryptSecret::onWindows()) {
+            $this->line('  Not Windows - store ' . $variable . ' through systemd, the web');
+            $this->line('  server\'s environment, or your secret manager, then re-run.');
+
+            return false;
+        }
+
+        if ($this->option('no-keygen')) {
+            $this->line('  skipped    no secret stored (--no-keygen)');
+
+            return false;
+        }
+
+        if (! $this->input->isInteractive()) {
+            $this->line('  skipped    no secret stored - run "php artisan db:keygen" from an');
+            $this->line('             elevated prompt.');
+
+            return false;
+        }
+
+        $this->line('  No secret is stored for this project yet.');
+        $this->line('  Storing one needs an ELEVATED prompt (it writes to the registry).');
         $this->line('');
 
-        if ($pool) {
-            $this->line('   The application pool is recycled for you.');
-        } else {
-            $this->line('   Then "iisreset". WAS reads the machine environment when it starts,');
-            $this->line('   so recycling the pool is NOT enough for a machine-wide variable.');
+        if (! $this->confirm('Store one now?', true)) {
+            return false;
+        }
+
+        $arguments = [];
+
+        if ($this->poolOption()) {
+            $arguments['--pool'] = $this->poolOption();
+        }
+
+        if ($this->call('db:keygen', $arguments) !== 0) {
+            $this->line('');
+            $this->warn('No secret was stored, so nothing can be encrypted yet.');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /** Can this process encrypt at all - development fallback included? */
+    private function secretIsUsable()
+    {
+        try {
+            EnvCrypt::encrypt('probe', $this->authoritativeSecret($this->poolOption()));
+
+            return true;
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /* ------------------------------------------------------------------ */
+    /* Migration                                                          */
+    /* ------------------------------------------------------------------ */
+
+    /**
+     * Encryption happens only when a human is present to review it. A
+     * non-interactive run - a deploy script, a Composer hook, CI - sets the
+     * project up and stops, because silently rewriting credentials is not
+     * something an unattended process should be able to do.
+     */
+    private function shouldEncrypt($secretReady)
+    {
+        if ($this->option('no-encrypt') || ! $secretReady) {
+            return false;
+        }
+
+        return $this->input->isInteractive();
+    }
+
+    private function migrate($variable)
+    {
+        $this->heading('Encrypting');
+
+        $connections = $this->connectionKeys();
+        $selected = array_keys($connections->keys());
+
+        if ($selected === []) {
+            $this->line('No database connection password was found in .env.');
+            $this->line('Nothing to encrypt. If that is wrong, run:');
+            $this->line('  php artisan db:password-encrypt-all --by-name');
+
+            $this->printRemainingSteps($variable, true);
+
+            return 0;
+        }
+
+        $migrator = new Migrator(new ConsoleIo($this), base_path(), $this->poolOption());
+        $migrator->useCandidates($selected, $this->otherPasswordKeys($selected));
+
+        if ($migrator->encryptAll(false) !== 0) {
+            return 1;
+        }
+
+        $backup = $migrator->backupPath();
+
+        if ($backup === null) {
+            // Nothing was encrypted - cancelled, or already done.
+            $this->printRemainingSteps($variable, true);
+
+            return 0;
+        }
+
+        $this->refreshAndCheck();
+        $this->confirmAndCleanUp($backup);
+
+        return 0;
+    }
+
+    /**
+     * The two checks that are safe to run unattended. Neither touches .env.
+     */
+    private function refreshAndCheck()
+    {
+        $this->heading('Checking');
+
+        $this->call('config:clear');
+        $this->call('db:secret-check');
+    }
+
+    /**
+     * The backup holds every plaintext password this project had, so it is not
+     * a file to forget on a server. But deleting it before the application is
+     * known to work would remove the rollback, so the question is asked in
+     * that order.
+     */
+    private function confirmAndCleanUp($backup)
+    {
+        $this->heading('Restart, then test');
+        $this->line('The web server still holds the old environment. Restart it yourself:');
+        $this->line('');
+        $this->line($this->poolOption()
+            ? '  the application pool was recycled for you when the secret was stored'
+            : '  iisreset          (restarts every site on this server - your call when)');
+        $this->line('');
+        $this->line('  php artisan queue:restart   for queue workers');
+        $this->line('');
+        $this->line('Then load a page that queries the database. Test it in a BROWSER, not');
+        $this->line('only here - the CLI and the web server have separate environments, and');
+        $this->line('that difference is the thing worth checking.');
+        $this->line('');
+
+        if (! $this->confirm('Is the application working?', false)) {
+            $this->line('');
+            $this->warn('Keeping the backup: ' . $backup);
+            $this->line('');
+            $this->line('To put the old .env back:');
+            $this->line('  php artisan envcrypt:restore');
+            $this->line('');
+            $this->line('Then "php artisan config:clear". Your database passwords were never');
+            $this->line('changed, so there is nothing to undo on the database side.');
+
+            return;
         }
 
         $this->line('');
-        $this->line('   Back the secret up off this machine. It is the only copy, and losing');
-        $this->line('   it makes an encrypted password unrecoverable.');
+        $this->line('The backup contains every password in PLAINTEXT:');
+        $this->line('  ' . $backup);
         $this->line('');
-        $this->line('2. Open a NEW terminal - a process cannot see a variable set after it');
-        $this->line('   started - then encrypt the existing password(s):');
+
+        $choice = $this->choice(
+            'What should happen to it?',
+            ['delete' => 'Delete it (recommended)', 'keep' => 'Keep it where it is', 'move' => 'Move it somewhere else'],
+            'delete'
+        );
+
+        if ($choice === 'delete' || $choice === 'Delete it (recommended)') {
+            $this->line(@unlink($backup)
+                ? 'Deleted.'
+                : 'Could not delete it - remove ' . $backup . ' by hand.');
+
+            return;
+        }
+
+        if ($choice === 'move' || $choice === 'Move it somewhere else') {
+            $destination = (string) $this->ask('Move it to (full path)');
+
+            if ($destination !== '' && @rename($backup, $destination)) {
+                $this->line('Moved to ' . $destination);
+
+                return;
+            }
+
+            $this->warn('Could not move it. It is still at ' . $backup);
+
+            return;
+        }
+
+        $this->warn('Kept at ' . $backup . ' - it holds plaintext passwords.');
+        $this->line('Move it off this server, or delete it, once you no longer need it.');
+    }
+
+    /* ------------------------------------------------------------------ */
+
+    private function printRemainingSteps($variable, $secretReady)
+    {
+        $pool = $this->poolOption();
+        $poolOption = $pool ? ' --pool="' . $pool . '"' : '';
+
+        $this->heading('Next steps');
+
+        $step = 1;
+
+        if (! $secretReady) {
+            $this->line($step++ . '. Store the secret, from an ELEVATED prompt:');
+            $this->line('     php artisan db:keygen' . $poolOption);
+            $this->line('');
+
+            if (! $pool) {
+                $this->line('   Then "iisreset" - WAS reads the machine environment when it starts,');
+                $this->line('   so recycling the pool is NOT enough for a machine-wide variable.');
+            }
+
+            $this->line('');
+            $this->line('   Back the secret up off this machine. It is the only copy, and losing');
+            $this->line('   it makes an encrypted password unrecoverable.');
+            $this->line('');
+        }
+
+        $this->line($step++ . '. Encrypt the existing password(s) - reviewed, and confirmed by you:');
         $this->line('     php artisan db:password-encrypt-all');
         $this->line('');
-        $this->line('   It lists what it found, waits for your confirmation, backs up .env,');
-        $this->line('   and reads every value back before reporting success.');
-        $this->line('');
-        $this->line('3. Check the whole thing:');
+        $this->line($step++ . '. Check it:');
         $this->line('     php artisan config:clear');
         $this->line('     php artisan db:secret-check');
         $this->line('');
-        $this->line('4. Restart whatever holds an old environment: iisreset (or the pool),');
-        $this->line('   and php artisan queue:restart. Then load a page that queries the');
-        $this->line('   database - the CLI and the web server have separate environments.');
+        $this->line($step . '. Restart the web server yourself (iisreset, or recycle the pool),');
+        $this->line('   then load a page that queries the database in a browser.');
         $this->line('');
         $this->line('Leave config/database.php exactly as Laravel ships it. Decryption happens');
         $this->line('at connection time, which is what keeps plaintext out of the config cache.');
@@ -281,9 +546,8 @@ class InstallCommand extends Command
         $this->line('The secret lives in ' . $variable . ', in the Windows registry or on an');
         $this->line('application pool - never in .env on a production server.');
         $this->line('');
-        $this->line('When the application will not boot, the same migration runs with no');
-        $this->line('framework at all:');
-        $this->line('     php storage/tools/envcrypt.php encrypt-all');
+        $this->line('Before removing this package, run "php artisan envcrypt:uninstall" - it');
+        $this->line('puts the plaintext passwords back, so the application keeps working.');
     }
 
     /** A short, uppercase identifier, safe as part of a variable name. */

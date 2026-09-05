@@ -2,17 +2,23 @@
 
 namespace Tusharb\EnvCrypt;
 
+use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\ServiceProvider;
+use Symfony\Component\Console\Helper\QuestionHelper;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Output\ConsoleOutput;
+use Symfony\Component\Console\Question\ConfirmationQuestion;
+use Throwable;
 use Tusharb\EnvCrypt\Commands\CheckCommand;
 use Tusharb\EnvCrypt\Commands\DecryptCommand;
 use Tusharb\EnvCrypt\Commands\EncryptAllCommand;
 use Tusharb\EnvCrypt\Commands\EncryptCommand;
 use Tusharb\EnvCrypt\Commands\InstallCommand;
 use Tusharb\EnvCrypt\Commands\KeygenCommand;
+use Tusharb\EnvCrypt\Commands\RestoreCommand;
 use Tusharb\EnvCrypt\Commands\RotateCommand;
 use Tusharb\EnvCrypt\Commands\UninstallCommand;
 use Tusharb\EnvCrypt\Commands\VerifyCommand;
-use Symfony\Component\Console\Output\ConsoleOutput;
 
 class EnvCryptServiceProvider extends ServiceProvider
 {
@@ -75,6 +81,7 @@ class EnvCryptServiceProvider extends ServiceProvider
             VerifyCommand::class,
             UninstallCommand::class,
             KeygenCommand::class,
+            RestoreCommand::class,
             RotateCommand::class,
             EncryptCommand::class,
             EncryptAllCommand::class,
@@ -87,9 +94,14 @@ class EnvCryptServiceProvider extends ServiceProvider
 
     /**
      * Composer drops the files into vendor/ and says nothing, which leaves an
-     * operator with an installed package and no idea that four more steps
-     * exist. So the package says so itself, at the one moment it is certain to
-     * be running: the package:discover that Composer fires after the install.
+     * operator with an installed package and no idea that any further step
+     * exists.
+     *
+     * A library cannot register a Composer script - only the root project can -
+     * so the closest available hook is package:discover, which Composer runs
+     * through post-autoload-dump immediately after the install. When a person
+     * is watching, the installer is offered there and then; otherwise the
+     * package prints what to run and stops.
      */
     private function announceIfNotInstalled()
     {
@@ -103,6 +115,15 @@ class EnvCryptServiceProvider extends ServiceProvider
             '',
             '  EnvCrypt is in vendor/, but this project is not set up yet.',
             '',
+        ] as $line) {
+            $output->writeln('<comment>' . $line . '</comment>');
+        }
+
+        if ($this->offerInstall($output)) {
+            return;
+        }
+
+        foreach ([
             '  Run:  php artisan envcrypt:install',
             '',
             '  It names this project\'s secret, publishes the config and prints',
@@ -111,6 +132,75 @@ class EnvCryptServiceProvider extends ServiceProvider
         ] as $line) {
             $output->writeln('<comment>' . $line . '</comment>');
         }
+    }
+
+    /**
+     * Run the installer straight away, but only when a person is actually
+     * there to answer it.
+     *
+     * The guard is the point. An unattended Composer run - CI, a deploy
+     * script, "composer install --no-interaction" - must never be able to
+     * modify a project's credentials, so anything without a real terminal
+     * attached gets the printed instruction instead. Even when it does run,
+     * the installer encrypts nothing without a separate confirmation.
+     */
+    private function offerInstall(ConsoleOutput $output)
+    {
+        if (! $this->canPrompt()) {
+            return false;
+        }
+
+        $question = new QuestionHelper();
+        $input = new ArgvInput();
+        $input->setInteractive(true);
+
+        $answer = $question->ask(
+            $input,
+            $output,
+            new ConfirmationQuestion('  Set it up now? [Y/n] ', true)
+        );
+
+        if (! $answer) {
+            return false;
+        }
+
+        try {
+            $this->app->make(Kernel::class)->call('envcrypt:install');
+            $output->write($this->app->make(Kernel::class)->output());
+        } catch (Throwable $e) {
+            // package:discover must not fail because of this - Composer treats
+            // a non-zero exit as a failed install.
+            $output->writeln('<comment>  Could not run it: ' . $e->getMessage() . '</comment>');
+
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Is there a human on the other end? A terminal on STDIN, no CI marker,
+     * and no --no-interaction anywhere on the command line.
+     */
+    private function canPrompt()
+    {
+        $argv = isset($_SERVER['argv']) ? $_SERVER['argv'] : [];
+
+        if (in_array('--no-interaction', $argv, true) || in_array('-n', $argv, true)) {
+            return false;
+        }
+
+        foreach (['CI', 'CONTINUOUS_INTEGRATION', 'BUILD_NUMBER', 'GITHUB_ACTIONS'] as $marker) {
+            if (getenv($marker)) {
+                return false;
+            }
+        }
+
+        if (! defined('STDIN') || ! function_exists('stream_isatty')) {
+            return false;
+        }
+
+        return @stream_isatty(STDIN);
     }
 
     /**

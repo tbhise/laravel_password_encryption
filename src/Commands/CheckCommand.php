@@ -99,6 +99,8 @@ class CheckCommand extends Command
             $ok = $this->assert($readable, $key . ' decrypts') && $ok;
         }
 
+        $ok = $this->checkConnections() && $ok;
+
         $ok = $this->assert($this->cacheHasNoPlaintext($secret), 'config cache holds no plaintext') && $ok;
 
         // Deliberately NOT passed an explicit secret: the connector resolves it
@@ -136,6 +138,37 @@ class CheckCommand extends Command
         $this->error('One or more checks FAILED.');
 
         return 1;
+    }
+
+    /**
+     * The checks that only the resolved database config can answer.
+     *
+     * Reading .env alone cannot see these: a connection whose password key no
+     * naming convention matches, and a connection on a driver nothing wraps.
+     * The second is the quiet one - the literal string "enc:..." goes to PDO
+     * as the password, and the error reads like a wrong password.
+     */
+    private function checkConnections()
+    {
+        $connections = $this->connectionKeys();
+        $ok = true;
+
+        foreach ($connections->encryptedOnUnwrappedDriver() as $connection => $driver) {
+            $ok = $this->assert(false, 'connection "' . $connection . '" is encrypted but driver "'
+                . $driver . '" is not wrapped') && $ok;
+            $this->line('         add it to the "connectors" array in config/envcrypt.php');
+        }
+
+        foreach ($connections->urlConfigured() as $connection) {
+            $this->line('  [    ] connection "' . $connection . '" is configured by URL - its');
+            $this->line('         password is inside that URL and is not managed here');
+        }
+
+        foreach ($connections->unmanageable() as $connection) {
+            $this->line('  [    ] connection "' . $connection . '" has a password that is not in .env');
+        }
+
+        return $ok;
     }
 
     private function configDoesNotDecrypt()

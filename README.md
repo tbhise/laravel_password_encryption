@@ -41,60 +41,101 @@ Laravel ships them; `db:secret-check` fails if it finds decryption in there.
 
 ```bash
 composer require tusharb/laravel-envcrypt
-php artisan envcrypt:install
 ```
 
-Composer can only put files in `vendor/`. `envcrypt:install` is the step that
-turns them into a working installation — and if you skip it, the package says
-so the moment Composer runs `package:discover`:
+Composer can only put files in `vendor/`. A library cannot register a Composer
+script — only the root project can — so the package uses the next hook
+available: `package:discover`, which Composer runs immediately afterwards. If a
+terminal is attached, it offers to set the project up there and then:
 
 ```
   EnvCrypt is in vendor/, but this project is not set up yet.
 
-  Run:  php artisan envcrypt:install
+  Set it up now? [Y/n]
 ```
 
-`envcrypt:install` names this project's secret (`ENVCRYPT_KEY_VAR` in `.env`,
-e.g. `TUSHARB_BILLING_BUILD_TAG`), publishes `config/envcrypt.php` and
-`storage/tools/envcrypt.php`, verifies the wiring, then prints the steps it
-cannot do for you. It encrypts nothing, and re-running it reports `unchanged`
-— safe in a deploy script.
-
-Give every project on a shared server its own identifier: two projects sharing
-a name share a secret, so an `enc:` value from one would decrypt in the other.
+Answer `n`, or run it later, and it is the same command:
 
 ```bash
-php artisan envcrypt:install --project=BILLING       # non-interactive
-php artisan envcrypt:install --pool="BillingPool"    # secret on an app pool
+php artisan envcrypt:install
 ```
 
-Then the operator steps — an elevated prompt and the database password are
-yours, not the package's:
+**An unattended run never gets that prompt.** No TTY, a `CI` variable, or
+`--no-interaction` anywhere on the command line, and the package prints the
+instruction instead — a deploy or CI run must not be able to alter credentials.
+
+### What `envcrypt:install` does
+
+1. **Names this project's secret** — from `APP_NAME`, falling back to the
+   directory name, then to a prompt. The name goes in `.env` as
+   `ENVCRYPT_KEY_VAR` (e.g. `TUSHARB_ACME_BILLING_BUILD_TAG`). Two projects
+   sharing a name would share a secret, so each gets its own.
+2. **Publishes** `config/envcrypt.php` and `storage/tools/envcrypt.php`.
+3. **Verifies the wiring** (`envcrypt:verify`).
+4. **Stores a secret** if the server has none, by offering `db:keygen`. An
+   existing secret is always kept — replacing it would make every value already
+   encrypted under it unreadable.
+5. **Finds the database passwords** — from Laravel's resolved database config,
+   not from variable names. Every connection's password is matched back to the
+   `.env` line that supplies it, so `DB_PASSWORD_REPORTING` is found without any
+   naming convention predicting it, and `MAIL_PASSWORD` / `REDIS_PASSWORD` are
+   excluded because they are not any connection's password.
+6. **Shows the field names and waits.** Only names are ever printed. You can
+   remove entries (`r`), add one (`a`), cancel (`c`), or confirm. Nothing is
+   encrypted until you answer.
+7. **Backs `.env` up**, encrypts, and reads every value back before reporting
+   success. If anything fails to verify, `.env` is restored.
+8. **Runs `config:clear` and `db:secret-check`.**
+9. **Tells you to restart IIS yourself**, then asks whether the application
+   works — and offers to delete, keep or move the plaintext backup based on
+   your answer.
+
+Options: `--project=NAME`, `--pool="AppPool"`, `--no-keygen`, `--no-encrypt`,
+`--no-tool`, `--force`.
+
+### What it will not do
+
+- Encrypt without an interactive confirmation.
+- Replace a secret that already exists (that is `db:key-rotate`, which
+  re-encrypts as it goes).
+- Encrypt an `enc:` value a second time.
+- Run `iisreset` — that restarts every site on the server, so it is yours to
+  time.
+- Print a password. Field names only, everywhere except the explicit
+  `db:password-decrypt --show`.
+
+## Removing the package
+
+**Run this before `composer remove`.** Deleting the code that decrypts while
+`.env` still says `DB_PASSWORD="enc:..."` leaves nothing able to read it:
 
 ```bash
-php artisan db:keygen      # ELEVATED, then iisreset for a machine variable.
-                           # Back the secret up: it is the only copy.
-
-# open a NEW terminal - a process cannot see a variable set after it started
-php artisan db:password-encrypt-all
-php artisan config:clear
-php artisan db:secret-check
-```
-
-`db:password-encrypt-all` finds the database passwords, shows you the list to
-confirm, backs up `.env`, rewrites it, and reads every value back before it
-declares success. Variable *names* are all it ever prints.
-
-## Uninstall
-
-```bash
-php artisan envcrypt:uninstall      # published files, and the stored secret
+php artisan envcrypt:uninstall
 composer remove tusharb/laravel-envcrypt
 ```
 
-It refuses to delete the secret while any managed `.env` value is still an
-`enc:` value, naming them, so nothing becomes unrecoverable by accident. Put
-the plaintext passwords back first, or pass `--force`.
+`envcrypt:uninstall` puts the passwords back in plaintext first (with a backup
+and a confirmation), then removes the published files and the stored secret,
+clears the config cache, and only then says removal is safe. If the values
+cannot be decrypted it stops, keeps the secret, and says so — the package stays
+installed and working.
+
+## Rolling back
+
+| Situation | Command |
+| --- | --- |
+| Application broken after encrypting | `php artisan envcrypt:restore` |
+| Want plaintext back, secret still works | `php artisan db:password-decrypt` |
+| Need one password for a database client | `php artisan db:password-decrypt --show --key=DB_PASSWORD` |
+| List the backups | `php artisan envcrypt:restore --list` |
+
+Backups live in `storage/app/envcrypt-backups/` — outside the web root, with a
+`.gitignore` that denies the whole directory, never overwritten, `0600` where
+the platform honours it. They hold **plaintext passwords**: delete them once
+the application is verified.
+
+Your database passwords are never changed on the database side, so a rollback
+is always just a `.env` edit.
 
 ## Commands
 
@@ -102,11 +143,12 @@ the plaintext passwords back first, or pass `--force`.
 | --- | --- |
 | `envcrypt:install` | Name this project's secret, publish the files, print the remaining steps |
 | `envcrypt:verify` | Check the installation and wiring — needs no secret and no database |
-| `envcrypt:uninstall` | Remove the published files and the stored secret |
+| `envcrypt:uninstall` | Decrypt `.env`, then remove the files and the secret — **run before `composer remove`** |
+| `envcrypt:restore` | Restore a `.env` backup (`--list` to see them) |
 | `db:keygen` | Generate the secret and store it (elevated) |
 | `db:password-encrypt-all` | Find, confirm and encrypt every database password in `.env` |
 | `db:password-encrypt` | Encrypt one password, prompted, for pasting into `.env` |
-| `db:password-decrypt` | Print a decrypted password — recovery only |
+| `db:password-decrypt` | Write the passwords back to `.env` as plaintext; `--show` prints one instead |
 | `db:key-rotate` | Replace the secret and re-encrypt every managed password |
 | `db:secret-check` | Verify the whole setup end to end; exit 1 on any failure |
 
@@ -128,11 +170,22 @@ outside the CLI.
 
 ## Several databases
 
-Any `DB_PASSWORD_<SUFFIX>` counts as a database password when a sibling
-connection field shares the suffix — `DB_HOST_SECOND` next to
-`DB_PASSWORD_SECOND`. That is what tells a second connection apart from
-`MAIL_PASSWORD` without hardcoding names. `MAIL_PASSWORD` and friends are
-listed but never selected.
+The artisan commands ask Laravel. Every entry in
+`config('database.connections')` has its password matched back to the `.env`
+line that supplies it, so custom keys — `DB_PASSWORD_SECOND`,
+`DB_PASSWORD_REPORTING`, anything — are found without a naming convention
+having to predict them, and `MAIL_PASSWORD` / `REDIS_PASSWORD` are excluded
+because no connection uses them. They are still *listed* during review, so you
+can see they were considered and left alone.
+
+Two cases are reported rather than silently skipped: a connection whose
+password is not in `.env` at all (hardcoded in config), and a connection
+configured through a single `url`, whose password lives inside that URL.
+
+The standalone tool has no framework to ask, so it falls back to names: a
+`DB_PASSWORD_<SUFFIX>` counts when a sibling connection field shares the suffix
+— `DB_HOST_SECOND` next to `DB_PASSWORD_SECOND`. `php artisan
+db:password-encrypt-all --by-name` uses the same fallback.
 
 The confirmed list is recorded in `.env` as `ENVCRYPT_TARGET_KEYS`. Re-running
 `db:password-encrypt-all` only asks again when a new database password turns
@@ -153,12 +206,6 @@ the old ciphertext, which is a working system.
 
 Old `.env` backups need the outgoing secret; `--reveal-previous` prints it once,
 on confirmation, so you can store it with them.
-
-## Rolling back
-
-Put the plaintext password back in `.env` and run `php artisan config:clear`.
-A value without the `enc:` prefix passes through the connector untouched, so
-nothing else has to change and the package can stay installed.
 
 ## Configuration
 
