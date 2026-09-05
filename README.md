@@ -44,25 +44,38 @@ composer require npav/laravel-envcrypt
 php artisan envcrypt:install
 ```
 
-`envcrypt:install` publishes `config/envcrypt.php` and records this project's
-secret name in `.env` as `ENVCRYPT_KEY_VAR` (e.g. `NPAV_BILLING_BUILD_TAG`).
-Give every project on a shared server its own name, so two of them can never
-end up sharing a secret.
+Composer can only put files in `vendor/`. `envcrypt:install` is the step that
+turns them into a working installation — and if you skip it, the package says
+so the moment Composer runs `package:discover`:
 
-Then, from an **elevated** prompt:
+```
+  EnvCrypt is in vendor/, but this project is not set up yet.
 
-```bash
-php artisan db:keygen               # generates and stores the secret
+  Run:  php artisan envcrypt:install
 ```
 
-`iisreset` afterwards for a machine-wide variable — WAS reads the machine
-environment when it starts. With `--pool="YourAppPool"` the pool is recycled
-for you.
+`envcrypt:install` names this project's secret (`ENVCRYPT_KEY_VAR` in `.env`,
+e.g. `NPAV_BILLING_BUILD_TAG`), publishes `config/envcrypt.php` and
+`storage/tools/envcrypt.php`, verifies the wiring, then prints the steps it
+cannot do for you. It encrypts nothing, and re-running it reports `unchanged`
+— safe in a deploy script.
 
-Open a **new terminal** — a process cannot see a variable set after it started
-— and migrate the existing passwords:
+Give every project on a shared server its own identifier: two projects sharing
+a name share a secret, so an `enc:` value from one would decrypt in the other.
 
 ```bash
+php artisan envcrypt:install --project=BILLING       # non-interactive
+php artisan envcrypt:install --pool="BillingPool"    # secret on an app pool
+```
+
+Then the operator steps — an elevated prompt and the database password are
+yours, not the package's:
+
+```bash
+php artisan db:keygen      # ELEVATED, then iisreset for a machine variable.
+                           # Back the secret up: it is the only copy.
+
+# open a NEW terminal - a process cannot see a variable set after it started
 php artisan db:password-encrypt-all
 php artisan config:clear
 php artisan db:secret-check
@@ -72,11 +85,24 @@ php artisan db:secret-check
 confirm, backs up `.env`, rewrites it, and reads every value back before it
 declares success. Variable *names* are all it ever prints.
 
+## Uninstall
+
+```bash
+php artisan envcrypt:uninstall      # published files, and the stored secret
+composer remove npav/laravel-envcrypt
+```
+
+It refuses to delete the secret while any managed `.env` value is still an
+`enc:` value, naming them, so nothing becomes unrecoverable by accident. Put
+the plaintext passwords back first, or pass `--force`.
+
 ## Commands
 
 | Command | What it does |
 | --- | --- |
-| `envcrypt:install` | Publish the config, name this project's secret |
+| `envcrypt:install` | Name this project's secret, publish the files, print the remaining steps |
+| `envcrypt:verify` | Check the installation and wiring — needs no secret and no database |
+| `envcrypt:uninstall` | Remove the published files and the stored secret |
 | `db:keygen` | Generate the secret and store it (elevated) |
 | `db:password-encrypt-all` | Find, confirm and encrypt every database password in `.env` |
 | `db:password-encrypt` | Encrypt one password, prompted, for pasting into `.env` |

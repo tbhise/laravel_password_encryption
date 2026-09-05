@@ -32,13 +32,21 @@ class CheckCommand extends Command
         $this->line('  secret variable: ' . EnvCrypt::rootKeyVar());
         $this->newLine();
 
-        $driver = config('database.default');
-        $binding = 'db.connector.' . config('database.connections.' . $driver . '.driver', $driver);
+        $default = config('database.default');
+        $driver = config('database.connections.' . $default . '.driver', $default);
+        $wrapped = array_keys((array) config('envcrypt.connectors', []));
 
-        $ok = $this->assert(
-            app()->bound($binding) && app($binding) instanceof EnvCryptConnector,
-            'connector bound (' . $binding . ')'
-        ) && $ok;
+        // SQLite has no password, so there is no connector to wrap.
+        if (! in_array($driver, $wrapped, true)) {
+            $this->line('  [    ] driver "' . $driver . '" carries no password - no connector needed');
+        } else {
+            $binding = 'db.connector.' . $driver;
+
+            $ok = $this->assert(
+                app()->bound($binding) && app($binding) instanceof EnvCryptConnector,
+                'connector bound (' . $binding . ')'
+            ) && $ok;
+        }
 
         // config/database.php must not decrypt - that would put the plaintext
         // into bootstrap/cache/config.php on the next config:cache.

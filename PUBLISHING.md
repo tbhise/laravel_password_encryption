@@ -1,97 +1,96 @@
 # Publishing this package
 
-Publishing needs your GitHub and Packagist accounts, so these are the steps to
-run yourself. The package is otherwise ready: `composer.json`, autoloading,
-Laravel auto-discovery, tests, licence and changelog are all in place.
+The package is live on Packagist as `npav/laravel-envcrypt`, from
+<https://github.com/tbhise/laravel_password_encryption>. What is missing is a
+**tag** — Packagist only has `dev-main`, so any project with the default
+`minimum-stability: stable` refuses to install it:
 
-## 1. Check the name
-
-`composer.json` claims `npav/laravel-envcrypt`. The vendor part must match the
-GitHub account or organisation you publish from, and it must be free on
-<https://packagist.org/packages/npav/laravel-envcrypt> — Packagist will refuse a
-name someone already holds. Change the `name` field and the `Npav\EnvCrypt`
-namespace together if you pick something else.
-
-Check the author block too — it currently reads `NPAV <tusharb@npav.net>`.
-
-## 2. Push it to GitHub
-
-From this directory:
-
-```bash
-git init
-git add .
-git commit -m "Initial release of npav/laravel-envcrypt"
-git branch -M main
-git remote add origin https://github.com/<account>/laravel-envcrypt.git
-git push -u origin main
+```
+Could not find a version of package npav/laravel-envcrypt matching your
+minimum-stability (stable). Require it with an explicit version constraint
+allowing its desired stability.
 ```
 
-The repository must be **public** for Packagist to index it.
+## Release the current work
 
-## 3. Tag a release
+1. Commit and push the changes on `main`.
+2. Update `CHANGELOG.md` — the heading still reads `## 1.0.0 - unreleased`.
+3. Tag it. On github.com: **Releases → Draft a new release → Choose a tag →**
+   type `v1.0.0` → **Create new tag** → **Publish release**. With git installed
+   locally, `git tag v1.0.0 && git push origin v1.0.0` does the same.
+4. On <https://packagist.org/packages/npav/laravel-envcrypt>, click **Update**,
+   or enable the GitHub hook under the repository's *Settings → Webhooks* so
+   future tags sync by themselves.
 
-Composer resolves versions from tags, so an untagged repository installs only
-as `dev-main`.
+Then, in each project:
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+composer require npav/laravel-envcrypt:^1.0
+php artisan envcrypt:install
 ```
 
-Update `CHANGELOG.md` — the heading currently says `unreleased` — before you
-tag.
+Projects already on `dev-main` move across with the same command — it replaces
+the branch constraint with the tagged one.
 
-## 4. Submit it to Packagist
-
-1. Sign in at <https://packagist.org> with the GitHub account that owns the
-   repository.
-2. **Submit** → paste the repository URL → **Check** → **Submit**.
-3. On the package page, click **Settings** and enable the GitHub hook (or add
-   Packagist's webhook in the repository's *Settings → Webhooks*). Without it,
-   new tags are not picked up automatically.
-
-## 5. Verify
+## Verify a release
 
 In a scratch Laravel project:
 
 ```bash
 composer require npav/laravel-envcrypt
-php artisan envcrypt:install
-php artisan list db
 ```
 
-`envcrypt:install` should publish `config/envcrypt.php` and write
-`ENVCRYPT_KEY_VAR` into `.env`; `php artisan list db` should show `db:keygen`,
-`db:secret-check` and the rest.
+The install should end with the package's own notice — that is the signal the
+service provider was discovered:
+
+```
+  EnvCrypt is in vendor/, but this project is not set up yet.
+
+  Run:  php artisan envcrypt:install
+```
+
+Then `php artisan envcrypt:install --project=SCRATCH` and
+`php artisan envcrypt:verify`, which should report every line `[ ok ]`.
+
+## Installing into an older project
+
+Two projects here needed dependency work first, and neither problem was in this
+package:
+
+* **A lock file that predates the installed PHP.** `empreg` had `mockery/mockery
+  1.6.4` and `nette/schema v1.2.3`, both capped below PHP 8.4, and each blocked
+  the other's update. `composer update mockery/mockery nette/schema -W` cleared
+  both, after which the require succeeded. Note that this moved
+  `laravel/framework` from `v8.83.27` to `8.x-dev`, because the stable 8.83.27
+  dependency set cannot resolve under PHP 8.4 — if that server runs an older
+  PHP, pin resolution to it instead with `"config": {"platform": {"php":
+  "8.0.30"}}` and keep the stable tag.
+* **No stable tag**, as above.
 
 ## Keeping a private package instead
 
-If this should not be public, skip Packagist and point the consuming projects
-at the repository directly:
+Skip Packagist and point the consuming projects at the repository:
 
 ```json
 {
     "repositories": [
-        { "type": "vcs", "url": "https://github.com/<account>/laravel-envcrypt.git" }
+        { "type": "vcs", "url": "https://github.com/tbhise/laravel_password_encryption.git" }
     ]
 }
 ```
 
-`composer require npav/laravel-envcrypt:^1.0` then resolves from the tags in
-that repository. Private Packagist and self-hosted Satis work the same way with
-more setup.
+`composer require npav/laravel-envcrypt:^1.0` then resolves from that
+repository's tags.
 
-## Afterwards
+## Migrating a project installed by the old kit
 
-`envcrypt-kit.php` in the parent directory is the original single-file
-installer. Projects it installed carry their own copies of the code in `app/`,
-and their secret variable is named `NPAV_<PROJECT>_BUILD_TAG`. To move one onto
-the package:
+Projects that `envcrypt-kit.php` installed carry their own copies of the code in
+`app/`, and their secret is named `NPAV_<PROJECT>_BUILD_TAG`.
 
 1. `composer require npav/laravel-envcrypt`
-2. Set `ENVCRYPT_KEY_VAR` in `.env` to the name that project already uses —
-   read it from the `ROOT_KEY_VAR` constant in `app/Support/EnvCrypt.php`.
+2. `php artisan envcrypt:install --project=<the same identifier>` — or set
+   `ENVCRYPT_KEY_VAR` in `.env` by hand to the name that project already uses,
+   read from the `ROOT_KEY_VAR` constant in `app/Support/EnvCrypt.php`.
 3. Delete `app/Support/EnvCrypt.php`, `app/EnvCryptKit.php`,
    `app/Providers/EnvCryptServiceProvider.php`, `storage/tools/envcrypt.php`,
    and the provider line those installed.

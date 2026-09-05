@@ -10,9 +10,21 @@ use Npav\EnvCrypt\Commands\EncryptCommand;
 use Npav\EnvCrypt\Commands\InstallCommand;
 use Npav\EnvCrypt\Commands\KeygenCommand;
 use Npav\EnvCrypt\Commands\RotateCommand;
+use Npav\EnvCrypt\Commands\UninstallCommand;
+use Npav\EnvCrypt\Commands\VerifyCommand;
+use Symfony\Component\Console\Output\ConsoleOutput;
 
 class EnvCryptServiceProvider extends ServiceProvider
 {
+    /**
+     * Commands during which an unconfigured install should announce itself.
+     *
+     * "package:discover" is the important one: Composer runs it through
+     * post-autoload-dump, so it is the first thing to execute after
+     * "composer require" and the only moment the package can speak for itself.
+     */
+    private $announceDuring = ['package:discover', 'list', 'about'];
+
     public function register()
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/envcrypt.php', 'envcrypt');
@@ -54,8 +66,14 @@ class EnvCryptServiceProvider extends ServiceProvider
             __DIR__ . '/../config/envcrypt.php' => $this->app->configPath('envcrypt.php'),
         ], 'envcrypt-config');
 
+        $this->publishes([
+            __DIR__ . '/../stubs/envcrypt-tool.php' => $this->app->storagePath('tools/envcrypt.php'),
+        ], 'envcrypt-tool');
+
         $this->commands([
             InstallCommand::class,
+            VerifyCommand::class,
+            UninstallCommand::class,
             KeygenCommand::class,
             RotateCommand::class,
             EncryptCommand::class,
@@ -63,5 +81,57 @@ class EnvCryptServiceProvider extends ServiceProvider
             DecryptCommand::class,
             CheckCommand::class,
         ]);
+
+        $this->announceIfNotInstalled();
+    }
+
+    /**
+     * Composer drops the files into vendor/ and says nothing, which leaves an
+     * operator with an installed package and no idea that four more steps
+     * exist. So the package says so itself, at the one moment it is certain to
+     * be running: the package:discover that Composer fires after the install.
+     */
+    private function announceIfNotInstalled()
+    {
+        if ($this->isInstalled() || ! $this->runningOneOf($this->announceDuring)) {
+            return;
+        }
+
+        $output = new ConsoleOutput();
+
+        foreach ([
+            '',
+            '  EnvCrypt is in vendor/, but this project is not set up yet.',
+            '',
+            '  Run:  php artisan envcrypt:install',
+            '',
+            '  It names this project\'s secret, publishes the config and prints',
+            '  the remaining steps. Nothing is encrypted until you confirm it.',
+            '',
+        ] as $line) {
+            $output->writeln('<comment>' . $line . '</comment>');
+        }
+    }
+
+    /**
+     * Installed means "this project has named its own secret". A project still
+     * on the default name has never run envcrypt:install, and would share a
+     * secret with every other project that had not either.
+     */
+    private function isInstalled()
+    {
+        return EnvCrypt::rootKeyVar() !== EnvCrypt::DEFAULT_ROOT_KEY_VAR;
+    }
+
+    private function runningOneOf(array $commands)
+    {
+        $argv = isset($_SERVER['argv']) ? $_SERVER['argv'] : [];
+
+        // "php artisan" on its own lists the commands, so it counts as list.
+        if (count($argv) < 2) {
+            return true;
+        }
+
+        return in_array($argv[1], $commands, true);
     }
 }
