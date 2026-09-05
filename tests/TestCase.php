@@ -129,11 +129,11 @@ abstract class TestCase extends Orchestra
     protected function useDevelopmentSecret($key, $extra = '')
     {
         $this->writeEnv(
-            "APP_ENV=local\nENVCRYPT_KEY_VAR=TUSHARB_TESTS_BUILD_TAG\n"
-            . "TUSHARB_TESTS_BUILD_TAG={$key}\nDB_CONNECTION=mysql\n" . $extra
+            "APP_ENV=local\nENVCRYPT_KEY_VAR=TESTS_BUILD_TAG\n"
+            . "TESTS_BUILD_TAG={$key}\nDB_CONNECTION=mysql\n" . $extra
         );
 
-        EnvCrypt::configure(['key_var' => 'TUSHARB_TESTS_BUILD_TAG']);
+        EnvCrypt::configure(['key_var' => 'TESTS_BUILD_TAG']);
     }
 
     protected function backups()

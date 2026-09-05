@@ -115,7 +115,10 @@ repository's tags.
 ## Migrating a project installed by the old kit
 
 Projects that `envcrypt-kit.php` installed carry their own copies of the code in
-`app/`, and their secret is named `TUSHARB_<PROJECT>_BUILD_TAG`.
+`app/`, and their secret is named `NPAV_<PROJECT>_BUILD_TAG` — the form that
+kit hardcodes. The package now names new installs `<PROJECT>_BUILD_TAG`, but the
+name is read from `ENVCRYPT_KEY_VAR` in `.env`, so an existing project keeps
+whatever name its values were encrypted under.
 
 1. `composer require tusharb/laravel-envcrypt`
 2. `php artisan envcrypt:install --project=<the same identifier>` — or set

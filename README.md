@@ -68,7 +68,7 @@ instruction instead — a deploy or CI run must not be able to alter credentials
 
 1. **Names this project's secret** — from `APP_NAME`, falling back to the
    directory name, then to a prompt. The name goes in `.env` as
-   `ENVCRYPT_KEY_VAR` (e.g. `TUSHARB_ACME_BILLING_BUILD_TAG`). Two projects
+   `ENVCRYPT_KEY_VAR` (e.g. `ACME_BILLING_BUILD_TAG`). Two projects
    sharing a name would share a secret, so each gets its own.
 2. **Publishes** `config/envcrypt.php` and `storage/tools/envcrypt.php`.
 3. **Verifies the wiring** (`envcrypt:verify`).

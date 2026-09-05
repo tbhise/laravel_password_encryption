@@ -35,13 +35,19 @@ class EnvCryptServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__ . '/../config/envcrypt.php', 'envcrypt');
 
+        // Resolved rather than reached for as $this->app['config']: the
+        // container is only ArrayAccess on the concrete Application class,
+        // and the contract this provider is handed does not declare it.
+        /** @var \Illuminate\Contracts\Config\Repository $config */
+        $config = $this->app->make('config');
+
         // Only the NAME of the secret's variable and the derivation context
         // are configuration. The secret itself is never read through config(),
         // because config:cache would then write it beside the ciphertext it
         // unlocks.
         EnvCrypt::configure([
-            'key_var' => $this->app['config']->get('envcrypt.key_var'),
-            'context' => $this->app['config']->get('envcrypt.context'),
+            'key_var' => $config->get('envcrypt.key_var'),
+            'context' => $config->get('envcrypt.context'),
             'base_path' => $this->app->basePath(),
         ]);
 
@@ -49,7 +55,7 @@ class EnvCryptServiceProvider extends ServiceProvider
         // "db.connector.{driver}" binding before using its own. Decrypting
         // there - at connection time - is what keeps the plaintext out of
         // bootstrap/cache/config.php.
-        foreach ((array) $this->app['config']->get('envcrypt.connectors', []) as $driver => $connector) {
+        foreach ((array) $config->get('envcrypt.connectors', []) as $driver => $connector) {
             // MariaDbConnector exists only from Laravel 11. A driver whose
             // connector this version does not ship is simply not wrapped.
             if (! class_exists($connector)) {
@@ -72,8 +78,14 @@ class EnvCryptServiceProvider extends ServiceProvider
             __DIR__ . '/../config/envcrypt.php' => $this->app->configPath('envcrypt.php'),
         ], 'envcrypt-config');
 
+        // Application::storagePath() took no argument before Laravel 9, where
+        // passing one silently returns the storage directory itself - and
+        // publishing a file onto a directory path fails with nothing useful
+        // said. configPath() has accepted one since Laravel 8, so only this
+        // call needs building by hand.
         $this->publishes([
-            __DIR__ . '/../stubs/envcrypt-tool.php' => $this->app->storagePath('tools/envcrypt.php'),
+            __DIR__ . '/../stubs/envcrypt-tool.php' => rtrim($this->app->storagePath(), '/\\')
+                . DIRECTORY_SEPARATOR . 'tools' . DIRECTORY_SEPARATOR . 'envcrypt.php',
         ], 'envcrypt-tool');
 
         $this->commands([

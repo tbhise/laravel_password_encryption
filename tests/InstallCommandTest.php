@@ -21,7 +21,7 @@ class InstallCommandTest extends TestCase
             ->assertSuccessful();
 
         $this->assertSame(
-            'TUSHARB_BILLING_BUILD_TAG',
+            'BILLING_BUILD_TAG',
             EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
         );
     }
@@ -34,7 +34,7 @@ class InstallCommandTest extends TestCase
         $this->artisan('envcrypt:install', ['--no-keygen' => true])->assertSuccessful();
 
         $this->assertSame(
-            'TUSHARB_ACME_BILLING_BUILD_TAG',
+            'ACME_BILLING_BUILD_TAG',
             EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
         );
     }
@@ -49,7 +49,7 @@ class InstallCommandTest extends TestCase
         $directory = strtoupper(preg_replace('/[^A-Za-z0-9]+/', '_', basename($this->app->basePath())));
 
         $this->assertSame(
-            'TUSHARB_' . trim($directory, '_') . '_BUILD_TAG',
+            trim($directory, '_') . '_BUILD_TAG',
             EnvFile::value($this->envContents(), 'ENVCRYPT_KEY_VAR')
         );
     }

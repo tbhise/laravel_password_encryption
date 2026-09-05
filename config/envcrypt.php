@@ -17,7 +17,7 @@ return [
     | does not stand out in a configuration dump - that is obscurity, not
     | protection, but it costs nothing.
     |
-    | Set ENVCRYPT_KEY_VAR in .env, e.g. TUSHARB_BILLING_BUILD_TAG.
+    | Set ENVCRYPT_KEY_VAR in .env, e.g. BILLING_BUILD_TAG.
     |
     */
 

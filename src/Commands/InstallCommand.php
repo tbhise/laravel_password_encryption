@@ -153,7 +153,14 @@ class InstallCommand extends Command
             return null;
         }
 
-        return 'TUSHARB_' . $project . '_BUILD_TAG';
+        // A leading digit is legal in a Windows environment variable but not in
+        // most shells' expansion syntax, so a project called "2024Billing"
+        // would produce a name that is awkward to read back by hand.
+        if (preg_match('/^[0-9]/', $project) === 1) {
+            $project = 'APP_' . $project;
+        }
+
+        return $project . '_BUILD_TAG';
     }
 
     /**
