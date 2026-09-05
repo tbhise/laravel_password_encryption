@@ -1,0 +1,116 @@
+#!/usr/bin/env php
+<?php
+
+/**
+ * Standalone .env password tool.
+ *
+ *   php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]
+ *   php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]
+ *   php vendor/npav/laravel-envcrypt/bin/envcrypt decrypt      ["enc:..."] [--key=NAME] [--pool=NAME]
+ *
+ * Boots neither Laravel nor Composer - it requires only this package's own
+ * framework-free classes. So it still works when a wrong DB_PASSWORD is the
+ * reason the site will not start, and it can migrate an existing production
+ * project the moment the package is deployed.
+ *
+ * It refuses to run outside the CLI. Publish it into storage/ if you want it
+ * somewhere you know is not under the web root.
+ *
+ * PASSWORD VALUES ARE NEVER PRINTED. Only variable names appear in any listing
+ * or confirmation - the sole exception is "decrypt", whose whole purpose is
+ * recovery and which asks first.
+ */
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
+use Npav\EnvCrypt\EnvCrypt;
+use Npav\EnvCrypt\Io\PlainIo;
+use Npav\EnvCrypt\Migrator;
+
+$src = dirname(__DIR__) . '/src';
+
+// Required by hand, in dependency order: an autoloader is exactly what this
+// script must not depend on.
+require_once $src . '/EnvFile.php';
+require_once $src . '/EnvCrypt.php';
+require_once $src . '/EnvCryptSecret.php';
+require_once $src . '/TargetKeys.php';
+require_once $src . '/Io/Io.php';
+require_once $src . '/Io/PlainIo.php';
+require_once $src . '/Migrator.php';
+
+$options = array();
+
+foreach (array_slice($argv, 2) as $argument) {
+    if (preg_match('/^--([a-z-]+)(?:=(.*))?$/', $argument, $m)) {
+        $options[$m[1]] = isset($m[2]) ? $m[2] : true;
+    }
+}
+
+$option = function ($name, $default = null) use ($options) {
+    return isset($options[$name]) && is_string($options[$name]) ? $options[$name] : $default;
+};
+
+// The project root: walk up from this file for the pair only a root has, so
+// the path holds however deep vendor/ happens to be. --root overrides it for
+// an unusual layout.
+$root = $option('root');
+
+if ($root === null) {
+    $directory = str_replace('\\', '/', __DIR__);
+
+    while (true) {
+        if (is_file($directory . '/artisan') && is_file($directory . '/composer.json')) {
+            $root = $directory;
+            break;
+        }
+
+        $parent = dirname($directory);
+
+        if ($parent === $directory) {
+            $root = str_replace('\\', '/', (string) getcwd());
+            break;
+        }
+
+        $directory = $parent;
+    }
+}
+
+if (! is_file($root . '/.env')) {
+    fwrite(STDERR, 'ERROR: no .env found in ' . $root . PHP_EOL
+        . 'Run this from the project root, or pass --root=/path/to/project.' . PHP_EOL);
+    exit(1);
+}
+
+// The .env this script edits is also where ENVCRYPT_KEY_VAR is recorded, so
+// point the crypto at it before anything reads the secret's name.
+EnvCrypt::configure(array('base_path' => $root));
+
+$io = new PlainIo();
+$migrator = new Migrator($io, $root, $option('pool'));
+$command = isset($argv[1]) ? $argv[1] : '';
+
+switch ($command) {
+    case 'encrypt-all':
+        exit($migrator->encryptAll(isset($options['reconfigure'])));
+
+    case 'encrypt':
+        exit($migrator->encryptOne($option('key', 'DB_PASSWORD')));
+
+    case 'decrypt':
+        $payload = isset($argv[2]) && strncmp($argv[2], '--', 2) !== 0 ? $argv[2] : null;
+
+        exit($migrator->decryptOne($payload, $option('key', 'DB_PASSWORD')));
+
+    default:
+        $io->write('Usage, from the project root:');
+        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt-all [--pool=NAME] [--reconfigure]');
+        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt encrypt     [--key=DB_PASSWORD] [--pool=NAME]');
+        $io->write('  php vendor/npav/laravel-envcrypt/bin/envcrypt decrypt     ["enc:..."] [--key=NAME] [--pool=NAME]');
+        $io->write('');
+        $io->write('Add --root=/path/to/project when running from elsewhere.');
+        exit(1);
+}

@@ -1,0 +1,61 @@
+{
+    "name": "npav/laravel-envcrypt",
+    "description": "Encrypted database passwords in .env for Laravel 8-13, decrypted at connection time so no plaintext ever reaches the config cache.",
+    "keywords": [
+        "laravel",
+        "env",
+        "encryption",
+        "database",
+        "password",
+        "secrets",
+        "iis",
+        "windows"
+    ],
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "NPAV",
+            "email": "tusharb@npav.net"
+        }
+    ],
+    "require": {
+        "php": "^7.3|^8.0",
+        "ext-openssl": "*",
+        "illuminate/console": "^8.0|^9.0|^10.0|^11.0|^12.0|^13.0",
+        "illuminate/database": "^8.0|^9.0|^10.0|^11.0|^12.0|^13.0",
+        "illuminate/support": "^8.0|^9.0|^10.0|^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": ">=6.0",
+        "phpunit/phpunit": ">=9.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Npav\\EnvCrypt\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Npav\\EnvCrypt\\Tests\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/envcrypt"
+    ],
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Npav\\EnvCrypt\\EnvCryptServiceProvider"
+            ]
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
